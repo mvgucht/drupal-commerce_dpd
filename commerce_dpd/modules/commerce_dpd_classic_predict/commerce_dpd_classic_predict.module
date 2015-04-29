@@ -1,0 +1,278 @@
+<?php
+
+/**
+ * @file
+ * Allows you to define any number of Kiala shipping services
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_dpd_classic_predict_menu() {
+  $items = array();
+
+  $items['admin/commerce/config/shipping/methods/dpd-classic-predict/edit'] = array(
+    'title' => 'Edit',
+    'description' => 'Configure the DPD Classic Predict shipping method.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_dpd_classic_predict_settings_form'),
+    'access arguments' => array('administer shipping'),
+    'file' => 'includes/commerce_dpd_classic_predict.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 0,
+  );
+
+  $items['admin/commerce/config/shipping/methods/dpd-classic-predict/add'] = array(
+    'title' => 'Add a DPD Classic Predict service',
+    'description' => 'Create a new DPD Classic Predict shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_goto',
+    'page arguments' => array('admin/commerce/config/shipping/services/dpd_classic_predict/add'),
+    'access callback' => 'commerce_dpd_classic_predict_service_access',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 8,
+  );
+
+  $items['admin/commerce/config/shipping/services/dpd-classic-predict/add'] = array(
+    'title' => 'Add a DPD Classic Predict rate service',
+    'description' => 'Create a new DPD Classic Predict shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array(
+      'commerce_dpd_classic_predict_service_form',
+      commerce_dpd_classic_predict_service_new()
+    ),
+    'access callback' => 'commerce_dpd_classic_predict_service_access',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_ACTION,
+    'context' => MENU_CONTEXT_PAGE,
+    'file' => 'includes/commerce_dpd_classic_predict.admin.inc',
+  );
+
+  foreach (commerce_shipping_services('dpd_classic_predict') as $name => $shipping_service) {
+    // Convert underscores to hyphens for the menu item argument.
+    $service_name_arg = 'dpd-classic-predict-' . strtr($name, '_', '-');
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/edit'] = array(
+      'title' => 'Edit',
+      'description' => 'Edit the DPD Classic Predict service.',
+      'page callback' => 'commerce_dpd_classic_predict_service_edit_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_dpd_classic_predict_service_access',
+      'access arguments' => array('update'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 0,
+      'file' => 'includes/commerce_dpd_classic_predict.admin.inc',
+    );
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/delete'] = array(
+      'title' => 'Delete',
+      'description' => 'Delete the DPD Classic Predict service.',
+      'page callback' => 'commerce_dpd_classic_predict_service_delete_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_dpd_classic_predict_service_access',
+      'access arguments' => array('delete'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 10,
+      'file' => 'includes/commerce_dpd_classic_predict.admin.inc',
+    );
+  }
+
+  return $items;
+}
+
+/**
+ * Access callback: grants users access to the service operations if they
+ * have the specific permission or generic shipping permission.
+ *
+ * @param string $op
+ *   The operation string: of create, update, or delete.
+ *
+ * @return boolean
+ *   Boolean indicating the user's access.
+ */
+function commerce_dpd_classic_predict_service_access($op) {
+  return user_access('administer shipping') || user_access('administer dpd services');
+}
+
+/**
+ * Implements hook_permission().
+ */
+function commerce_dpd_classic_predict_permission() {
+  return array(
+    'administer dpd classic predict services' => array(
+      'title' => t('Administer DPD Classic Predict shipping services.'),
+      'description' => t('Allows users to create, edit and delete DPD Classic Predict shipping services.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Returns an initialized shipping service array for forms.
+ */
+function commerce_dpd_classic_predict_service_new() {
+  return array(
+    'name' => '',
+    'title' => '',
+    'display_title' => '',
+    'description' => t('DPD Classic Predict allows parcels to be delivered to your address.'),
+    'rules_component' => TRUE,
+    'base_rate' => array(
+      'amount' => 0,
+      'currency_code' => commerce_default_currency(),
+      'data' => array(),
+    ),
+    'data' => array(),
+    'is_new' => TRUE,
+  );
+}
+
+/**
+ * Implements hook_hook_info().
+ */
+function commerce_dpd_classic_predict_hook_info() {
+  $base_info = array(
+    'group' => 'commerce',
+  );
+
+  $hooks = array(
+    'commerce_dpd_classic_predict_settings_info' => $base_info,
+    'commerce_dpd_classic_predict_settings_info_alter' => $base_info,
+    'commerce_dpd_classic_predict_service_insert' => $base_info,
+    'commerce_dpd_classic_predict_service_update' => $base_info,
+    'commerce_dpd_classic_predict_service_delete' => $base_info,
+  );
+
+  return $hooks;
+}
+
+
+/**
+ * Saves a service to the database.
+ *
+ * @param object $shipping_service
+ *   The shipping service to save. If the service array includes the
+ *   base_rate array, its amount and currency_code values will be moved up a
+ *   level to be saved to the database via drupal_write_record().
+ * @param boolean $skip_reset
+ *   Boolean indicating whether or not this save should result in shipping
+ *   services being reset and the menu being rebuilt; defaults to FALSE. This is
+ *   useful when you intend to perform many saves at once, as menu rebuilding is
+ *   very costly in terms of performance.
+ *
+ * @return string or boolean
+ *   The return value of the call to drupal_write_record() to save the
+ *   service; either FALSE on failure or SAVED_NEW or SAVED_UPDATED indicating
+ *   the type of query performed to save the service.
+ */
+function commerce_dpd_classic_predict_service_save($shipping_service, $skip_reset = FALSE) {
+  // Move the amount and currency code up a level in the service array.
+  if (!empty($shipping_service['base_rate'])) {
+    $shipping_service['amount'] = $shipping_service['base_rate']['amount'];
+    $shipping_service['currency_code'] = $shipping_service['base_rate']['currency_code'];
+  }
+
+  $op = drupal_write_record('commerce_dpd_classic_predict_service', $shipping_service, empty($shipping_service['is_new']) ? 'name' : array());
+
+  // If this is a new service and the insert did not fail...
+  if (!empty($shipping_service['is_new']) && $op !== FALSE) {
+    // Notify other modules that a new service has been created.
+    module_invoke_all('commerce_dpd_classic_predict_service_insert', $shipping_service, $skip_reset);
+  }
+  elseif ($op !== FALSE) {
+    // Notify other modules that an existing service has been updated.
+    module_invoke_all('commerce_dpd_classic_predict_service_update', $shipping_service, $skip_reset);
+  }
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  return $op;
+}
+
+/**
+ * Deletes a service.
+ *
+ * @param $name
+ *   The machine-name of the service.
+ * @param $skip_reset
+ *   Boolean indicating whether or not this delete should result in shipping
+ *   services being reset and the menu being rebuilt; defaults to FALSE. This is
+ *   useful when you intend to perform many deletions at once, as menu
+ *   rebuilding is very costly in terms of performance.
+ */
+function commerce_dpd_classic_predict_service_delete($name, $skip_reset = FALSE) {
+  $shipping_service = commerce_shipping_service_load($name);
+
+  db_delete('commerce_dpd_classic_predict_service')
+    ->condition('name', $name)
+    ->execute();
+
+  rules_config_delete(array('commerce_shipping_service_' . $name));
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  // Notify other modules that this service has been deleted.
+  module_invoke_all('commerce_dpd_classic_predict_service_delete', $shipping_service, $skip_reset);
+
+}
+
+/**
+ * Displays the delete confirmation form for an existing service.
+ *
+ * @param string $name
+ *   The machine-name of the service to delete.
+ * @return object drupal_get_form()
+ *   Returns a Drupal Form
+ */
+function commerce_dpd_classic_predict_service_delete_page($name) {
+  return drupal_get_form('commerce_dpd_classic_predict_service_delete_form', commerce_shipping_service_load($name));
+}
+
+/**
+ * Can Ship To Country Check
+ *
+ * @param string $country_code
+ *   The 2 digit country code
+ *
+ * @return boolean TRUE or FALSE
+ *   TRUE if shipping available.
+ *   FALSE if shipping not available for that country
+ */
+function commerce_dpd_classic_predict_can_ship_to_country($country_code) {
+  $settings = commerce_dpd_settings();
+
+  if (empty($country_code)) {
+    return FALSE;
+  }
+
+  // DENY if no ship from country
+  if (empty($settings['ship_from_classic_predict'])) {
+    return FALSE;
+  }
+
+  // DENY if not in any enabled countries
+  if (empty($settings['ship_to_classic_predict']) ||
+    !in_array($country_code, $settings['ship_to_classic_predict'])
+  ) {
+    return FALSE;
+  }
+
+  return TRUE;
+
+}

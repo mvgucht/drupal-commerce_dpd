@@ -1,0 +1,29 @@
+name = Commerce DPD
+description = Integrates DPD API
+package = Commerce (shipping)
+core = 7.x
+
+configure = admin/commerce/config/dpd
+
+;Entity
+files[] = includes/entity/controller.inc
+files[] = includes/entity/entity.inc
+files[] = includes/admin/commerce_dpd.admin.inc
+files[] = includes/commerce/commerce_dpd.commerce.inc
+files[] = includes/commerce/commerce_dpd.info.inc
+files[] = includes/pdf/pdf_concat.inc
+
+;Dependencies
+dependencies[] = libraries
+dependencies[] = commerce
+dependencies[] = commerce_shipping
+dependencies[] = commerce_order
+dependencies[] = leaflet
+dependencies[] = leaflet_more_maps
+
+; Information added by Drupal.org packaging script on 2015-01-07
+version = "7.x-1.1"
+core = "7.x"
+project = "commerce_dpd"
+datestamp = "1420623485"
+

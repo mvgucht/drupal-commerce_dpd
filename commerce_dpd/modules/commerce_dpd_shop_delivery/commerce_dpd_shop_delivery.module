@@ -1,0 +1,1240 @@
+<?php
+
+/**
+ * @file
+ * Allows you to define any number of DPD shipping services
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_dpd_shop_delivery_menu() {
+  $items = array();
+
+  $items['admin/commerce/config/shipping/methods/dpd-shop-delivery/edit'] = array(
+    'title' => 'Edit',
+    'description' => 'Configure the DPD Shop Finder shipping method.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_dpd_shop_delivery_settings_form'),
+    'access arguments' => array('administer shipping'),
+    'file' => 'includes/commerce_dpd_shop_delivery.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 0,
+  );
+
+  $items['admin/commerce/config/shipping/methods/dpd-shop-delivery/add'] = array(
+    'title' => 'Add a DPD Shop Delivery service',
+    'description' => 'Create a new DPD Shop Delivery shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_goto',
+    'page arguments' => array('admin/commerce/config/shipping/services/dpd_shop_delivery/add'),
+    'access callback' => 'commerce_dpd_shop_delivery_service_access',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 8,
+  );
+
+  $items['admin/commerce/config/shipping/services/dpd-shop-delivery/add'] = array(
+    'title' => 'Add a DPD Shop Delivery rate service',
+    'description' => 'Create a new DPD Shop Delivery shipping service, including a title and base shipping rate.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array(
+      'commerce_dpd_shop_delivery_service_form',
+      commerce_dpd_shop_delivery_service_new()
+    ),
+    'access callback' => 'commerce_dpd_shop_delivery_service_access',
+    'access arguments' => array('create'),
+    'type' => MENU_LOCAL_ACTION,
+    'context' => MENU_CONTEXT_PAGE,
+    'file' => 'includes/commerce_dpd_shop_delivery.admin.inc',
+  );
+
+  foreach (commerce_shipping_services('dpd_shop_delivery') as $name => $shipping_service) {
+    // Convert underscores to hyphens for the menu item argument.
+    $service_name_arg = 'dpd-shop-delivery-' . strtr($name, '_', '-');
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/edit'] = array(
+      'title' => 'Edit',
+      'description' => 'Edit the DPD Shop Delivery service.',
+      'page callback' => 'commerce_dpd_shop_delivery_service_edit_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_dpd_shop_delivery_service_access',
+      'access arguments' => array('update'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 0,
+      'file' => 'includes/commerce_dpd_shop_delivery.admin.inc',
+    );
+
+    $items['admin/commerce/config/shipping/services/' . $service_name_arg . '/delete'] = array(
+      'title' => 'Delete',
+      'description' => 'Delete the DPD Shop Delivery service.',
+      'page callback' => 'commerce_dpd_shop_delivery_service_delete_page',
+      'page arguments' => array($name),
+      'access callback' => 'commerce_dpd_shop_delivery_service_access',
+      'access arguments' => array('delete'),
+      'type' => MENU_LOCAL_TASK,
+      'context' => MENU_CONTEXT_INLINE,
+      'weight' => 10,
+      'file' => 'includes/commerce_dpd_shop_delivery.admin.inc',
+    );
+  }
+
+  // Define an always accessible path to receive Map selections.
+  $items['commerce_dpd_shop_delivery/map-select/%commerce_order/%commerce_shipping_service'] = array(
+    'page callback' => 'commerce_dpd_shop_delivery_process_map_select',
+    'page arguments' => array(2, 3),
+    'access callback' => 'commerce_dpd_shop_delivery_map_select_access',
+    'access arguments' => array(2, 3),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+
+/**
+ * Validates token
+ *
+ * @param string $token
+ *   A string representing the token
+ * @param boolean $skip_anonymous
+ *   Indicates TRUE or FALSE for skipping for anonymous users
+ * @return  boolean TRUE or FALSE
+ *   Returns TRUE if session token is valid map selections
+ */
+function commerce_dpd_shop_delivery_map_select_valid_token($token, $skip_anonymous = FALSE) {
+  return drupal_valid_token($token, 'commerce_dpd_shop_delivery_map_select');
+}
+
+/**
+ * Access Callback
+ *
+ * @param object $order
+ *   The fully loaded Commerce Order Object
+ * @param array $shipping_service
+ *   An array representing the $shipping_service
+ * @return  boolean TRUE or FALSE
+ *   Returns TRUE if user has access to it or FALSE if not
+ */
+function commerce_dpd_shop_delivery_map_select_access($order, $shipping_service) {
+	
+	var_dump('start');
+
+  global $user;
+	
+  if (!isset($_GET['token']) || !drupal_valid_token($_GET['token'], 'commerce_dpd_shop_delivery/map-select/' . $order->order_id . '/' . $shipping_service['name'])) {
+		var_dump('not allowed');
+		return FALSE;
+  }
+
+  // DENY if not a DPD shipping method
+  if ($shipping_service['shipping_method'] != 'dpd_shop_delivery') {
+		var_dump('not allowed');
+    return FALSE;
+  }
+
+  // ALLOW owner access if order is cart and can access checkout
+  if ($user->uid == $order->uid && commerce_cart_order_is_cart($order) && user_access('access checkout')) {
+    var_dump('allowed');
+		return TRUE;
+  }
+
+  // ALLOW admin access
+  if (commerce_order_access('update', $order)) {
+		var_dump('allowed 2');
+    return TRUE;
+  }
+	
+	var_dump('ran out');
+  return FALSE;
+
+}
+
+
+/**
+ * Callback to process Map Selection
+ *
+ * @param object $order
+ *   The fully loaded Commerce Order Object
+ * @param array $shipping_service
+ *   An array representing the $shipping_service
+ * @return  string Path
+ *   Returns redirect with drupal_goto(path)
+ */
+function commerce_dpd_shop_delivery_process_map_select($order, $shipping_service) {
+
+  global $user;
+
+  // pull the parameters send back from the map
+  $params = drupal_get_query_parameters();
+
+  // Extract shop id from parameters and create shipping line item
+  $shop_id = NULL;
+  $shop_lat = NULL;
+  $shop_lon = NULL;
+	var_dump('select start');
+  if (!empty($params['shop_id']) && !empty($params['shop_lon']) && !empty($params['shop_lat'])) {
+    $shop_id_param = intval($params['shop_id']);
+    $shop_lon_param = floatval($params['shop_lon']);
+    $shop_lat_param = floatval($params['shop_lat']);
+		var_dump('inside first if');
+    if (!empty($shop_id_param) && !empty($shop_lon_param) && !empty($shop_lat_param)) {
+      $shop_id = $shop_id_param;
+      $shop_lon = $shop_lon_param;
+      $shop_lat = $shop_lat_param;
+			var_dump('inside second if');
+
+      // Create and save shipping line item
+      if (!empty($shipping_service['name'])) {
+        commerce_dpd_shop_delivery_add_shipping_line_item($order, $shipping_service['name'], $shop_id, $shop_lon, $shop_lat, FALSE);
+      }
+    }
+  }
+
+  // determine url for redirect
+  $redirect_url = '';
+  if (isset($params['destination'])) {
+    $redirect_destination_url = url($params['destination']);
+    if (!empty($redirect_destination_url)) {
+      $redirect_url = $redirect_destination_url;
+    }
+  }
+
+  if (!$redirect_url && !empty($order->order_id)) {
+    if (commerce_cart_order_is_cart($order) && $user->uid == $order->uid) {
+      $redirect_url = 'checkout/' . $order->order_id . '/shipping';
+    }
+    elseif (commerce_order_access('view', $order)) {
+      $redirect_url = 'admin/commerce/orders/' . $order->order_id;
+    }
+  }
+
+  // issue redirect
+  drupal_goto($redirect_url);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ * Provide a form-specific alteration.
+ */
+function commerce_dpd_shop_delivery_form_commerce_checkout_form_shipping_alter(&$form, &$form_state, $form_id) {
+
+  $shipping_service = array('name' => 'dpd_shop_delivery');
+  $order = $form_state['build_info']['args'][0];
+  //$order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, FALSE);
+
+
+  // Local store machine name
+  $shipping_service = 'dpd_shop_delivery';
+
+  if (isset($form_state['values']['commerce_shipping']['shipping_service']) && $form_state['values']
+    ['commerce_shipping']['shipping_service'] == $shipping_service || $form['commerce_shipping']['shipping_service']['#default_value'] === 'dpd_parcelshop'
+  ) {
+    $form['commerce_shipping']['service_details']['dpd_shop'] = array(
+      '#type' => 'fieldset',
+      '#title' => 'Map',
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#attributes' => array('class' => array('dpd-shop-fieldset')),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_map'] = array(
+      '#markup' => $map_markup,
+      '#prefix' => '<div class="dpd-shop-map">',
+      '#suffix' => '</div>',
+      '#weight' => 3,
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address'] = array(
+      '#type' => 'fieldset',
+      '#title' => 'Custom Address',
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+      '#attributes' => array('class' => array('commerce-dpd-shop-delivery-custom-address')),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['street'] = array(
+      '#type' => 'textfield',
+      '#size' => '25',
+      '#title' => t('Street'),
+      '#attributes' => array('class' => array('commerce-dpd-shop-delivery-custom-address-street')),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['house_number'] = array(
+      '#type' => 'textfield',
+      '#size' => '3',
+      '#title' => t('No'),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['postal_code'] = array(
+      '#type' => 'textfield',
+      '#size' => '7',
+      '#title' => t('Postal Code'),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['city'] = array(
+      '#type' => 'textfield',
+      '#size' => '12',
+      '#title' => t('City'),
+    );
+
+    $form['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['button'] = array(
+      '#type' => 'submit',
+      '#name' => 'submit',
+      '#value' => t('OK'),
+      '#ajax' => array(
+        'callback' => 'commerce_dpd_shop_delivery_custom_address_ajax_callback',
+        'wrapper' => 'dpd-shop-map',
+      ),
+      '#attributes' => array('class' => array('commerce-dpd-shop-delivery-custom-address-button')),
+    );
+
+
+    $form['#attached']['js'] = array(
+      drupal_get_path('module', 'commerce_dpd_shop_delivery') . '/theme/commerce_dpd_shop_delivery.js',
+    );
+
+  }
+}
+
+/**
+ * Implements AJAX Callback.
+ */
+function commerce_dpd_shop_delivery_custom_address_ajax_callback($form, $form_state) {
+  $commands = array();
+
+  $shipping_service = array('name' => 'dpd_shop_delivery');
+  $order = $form_state['build_info']['args'][0];
+  $values = $form_state['values'];
+
+  if (!empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['street']) &&
+    !empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['house_number']) &&
+    !empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['postal_code'])
+  ) {
+
+    $custom_address = array(
+      'Street' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['street'],
+      'HouseNo' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['house_number'],
+      'Country' => 'DE',
+      'City' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['city'],
+      'ZipCode' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['postal_code'],
+    );
+
+    $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, $custom_address);
+
+  }
+  else {
+    $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, FALSE);
+  }
+
+  $commands[] = ajax_command_html('.dpd-shop-map', $map_markup);
+  return array(
+    '#type' => 'ajax',
+    '#commands' => $commands,
+  );
+}
+
+/**
+ * Implements hook_theme().
+ * Provide a Theming functions for Module.
+ */
+function commerce_dpd_shop_delivery_theme() {
+  $path = drupal_get_path('module', 'commerce_dpd_shop_delivery') . '/theme';
+
+  return array(
+    'commerce_dpd_shop_delivery_shop_details' => array(
+      'variables' => array(
+        'shop_details' => array(),
+        'shop_select_link' => NULL,
+      ),
+      'path' => $path,
+      'file' => 'commerce_dpd_shop_delivery.theme.inc',
+      'template' => 'commerce-dpd-shop-delivery-shop-details',
+    ),
+  );
+}
+
+/**
+ * Access callback: grants users access to the service operations if they
+ * have the specific permission or generic shipping permission.
+ *
+ * @param string $op
+ *   The operation string: of create, update, or delete.
+ *
+ * @return boolean user_access
+ *   Boolean indicating the user's access.
+ */
+function commerce_dpd_shop_delivery_service_access($op) {
+  return user_access('administer shipping') || user_access('administer dpd shop delivery services');
+}
+
+/**
+ * Implements hook_permission().
+ */
+function commerce_dpd_shop_delivery_permission() {
+  return array(
+    'administer dpd shop delivery services' => array(
+      'title' => t('Administer DPD Shop Delivery shipping services.'),
+      'description' => t('Allows users to create, edit and delete DPD Shop Delivery shipping services.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Returns an initialized shipping service array for forms.
+ */
+function commerce_dpd_shop_delivery_service_new() {
+  return array(
+    'name' => '',
+    'title' => '',
+    'display_title' => '',
+    'description' => t('DPD Shop Delivery allows parcels to be delivered to close by shops with wide open hours and no waiting lines.'),
+    'rules_component' => TRUE,
+    'base_rate' => array(
+      'amount' => 0,
+      'currency_code' => commerce_default_currency(),
+      'data' => array(),
+    ),
+    'data' => array(),
+    'is_new' => TRUE,
+  );
+}
+
+/**
+ * Saves a service to the database.
+ *
+ * @param object $shipping_service
+ *   The shipping service to save. If the service array includes the
+ *   base_rate array, its amount and currency_code values will be moved up a
+ *   level to be saved to the database via drupal_write_record().
+ * @param boolean $skip_reset
+ *   Boolean indicating whether or not this save should result in shipping
+ *   services being reset and the menu being rebuilt; defaults to FALSE. This is
+ *   useful when you intend to perform many saves at once, as menu rebuilding is
+ *   very costly in terms of performance.
+ *
+ * @return string $op
+ *   The return value of the call to drupal_write_record() to save the
+ *   service; either FALSE on failure or SAVED_NEW or SAVED_UPDATED indicating
+ *   the type of query performed to save the service.
+ */
+function commerce_dpd_shop_delivery_service_save($shipping_service, $skip_reset = FALSE) {
+  // Move the amount and currency code up a level in the service array.
+  if (!empty($shipping_service['base_rate'])) {
+    $shipping_service['amount'] = $shipping_service['base_rate']['amount'];
+    $shipping_service['currency_code'] = $shipping_service['base_rate']['currency_code'];
+  }
+
+  $op = drupal_write_record('commerce_dpd_shop_delivery_service', $shipping_service, empty($shipping_service['is_new']) ? 'name' : array());
+
+  // If this is a new service and the insert did not fail...
+  if (!empty($shipping_service['is_new']) && $op !== FALSE) {
+    // Notify other modules that a new service has been created.
+    module_invoke_all('commerce_dpd_shop_delivery_service_insert', $shipping_service, $skip_reset);
+  }
+  elseif ($op !== FALSE) {
+    // Notify other modules that an existing service has been updated.
+    module_invoke_all('commerce_dpd_shop_delivery_service_update', $shipping_service, $skip_reset);
+  }
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  return $op;
+}
+
+/**
+ * Deletes a service.
+ *
+ * @param $name
+ *   The machine-name of the service.
+ * @param $skip_reset
+ *   Boolean indicating whether or not this delete should result in shipping
+ *   services being reset and the menu being rebuilt; defaults to FALSE. This is
+ *   useful when you intend to perform many deletions at once, as menu
+ *   rebuilding is very costly in terms of performance.
+ */
+function commerce_dpd_shop_delivery_service_delete($name, $skip_reset = FALSE) {
+  $shipping_service = commerce_shipping_service_load($name);
+
+  db_delete('commerce_dpd_shop_delivery_service')
+    ->condition('name', $name)
+    ->execute();
+
+  rules_config_delete(array('commerce_shipping_service_' . $name));
+
+  // Clear the necessary caches and rebuild the menu items.
+  if (!$skip_reset) {
+    commerce_shipping_services_reset();
+    entity_defaults_rebuild();
+    rules_clear_cache(TRUE);
+    menu_rebuild();
+  }
+
+  // Notify other modules that this service has been deleted.
+  module_invoke_all('commerce_dpd_shop_delivery_service_delete', $shipping_service, $skip_reset);
+
+}
+
+/**
+ * Displays the delete confirmation form for an existing service.
+ *
+ * @param string $name
+ *   The machine-name of the service to delete.
+ * @return drupal_get_form()
+ *   Returns a drupal form
+ */
+function commerce_dpd_shop_delivery_service_delete_page($name) {
+  return drupal_get_form('commerce_dpd_shop_delivery_service_delete_form', commerce_shipping_service_load($name));
+}
+
+/**
+ * Helper function to retrieve leaflet map types
+ */
+function _commerce_dpd_shop_delivery_map_type_otions() {
+
+  $map_options = array();
+  foreach (leaflet_map_get_info() as $key => $map) {
+    $map_options[$key] = t('@label', array('@label' => $map['label']));
+  }
+
+  return $map_options;
+
+}
+
+/**
+ * Line item properties
+ *
+ * @param object $entity
+ *   Fully loaded Entity Object
+ * @param array $options
+ *   The options for the property
+ * @param string $name
+ *   The name of the property defined as string
+ * @return boolean FALSE or object
+ */
+function commerce_dpd_shop_delivery_line_item_property_get($entity, array $options, $name) {
+  switch ($name) {
+    case 'dpd_shop':
+      if (!empty($entity->line_item_id)) {
+        return commerce_dpd_shop_delivery_line_item_shop_load($entity->line_item_id);
+      }
+      break;
+  }
+  return FALSE;
+}
+
+/**
+ * Order properties
+ *
+ * @param object $entity
+ *   Fully loaded Entity Object
+ * @param array $options
+ *   The options for the property
+ * @param string $name
+ *   The name of the property defined as string
+ * @return boolean FALSE or object
+ */
+function commerce_dpd_shop_delivery_order_property_get($entity, array $options, $name) {
+  $shop = NULL;
+  if (!empty($entity->order_id)) {
+    $shop = commerce_dpd_shop_delivery_line_item_shop_load_by_order($entity->order_id);
+  }
+
+  switch ($name) {
+    case 'dpd_shop':
+      return !empty($shop) ? $shop : NULL;
+      break;
+    case 'dpd_shop_id':
+      return !empty($shop->shop_id) ? $shop->shop_id : NULL;
+      break;
+    case 'dpd_shop_url':
+      if (!empty($shop->shop_id)) {
+        return url('dpd-shops/' . $shop->shop_id, array('absolute' => TRUE));
+      }
+      break;
+    case 'dpd_shop_remote_url':
+      if (!empty($shop->shop_id)) {
+        return $shop->shop_id->url;
+      }
+      break;
+  }
+  return FALSE;
+}
+
+/**
+ * Define property info for line item DPD Shop records
+ */
+function commerce_dpd_shop_delivery_line_item_shop_property_info_callback() {
+  return array(
+    'id' => array(
+      'label' => t('Record Unique ID'),
+      'type' => 'integer',
+      'description' => t('The unique ID of the record for the line item DPD Point.'),
+    ),
+    'line_item_id' => array(
+      'label' => t('Line Item ID'),
+      'type' => 'integer',
+      'description' => t('The numeric ID of the line item related to the DPD Point.'),
+    ),
+    'line_item' => array(
+      'label' => t('Line Item'),
+      'type' => 'commerce_line_item',
+      'description' => t('The line item entity related to the DPD Shop.'),
+      'getter callback' => 'commerce_dpd_shop_delivery_line_item_shop_property_get',
+    ),
+    'shop_id' => array(
+      'label' => t('DPD Shop ID'),
+      'type' => 'integer',
+      'description' => t('The numeric ID of the DPD Shop related to the line item.'),
+    ),
+    'shop_lon' => array(
+      'label' => t('DPD Shop GEO Data Longitude'),
+      'type' => 'integer',
+      'description' => t('The decimal of longitude of the DPD Shop related to the line item.'),
+    ),
+    'shop_lat' => array(
+      'label' => t('DPD Shop GEO Data Latitude'),
+      'type' => 'integer',
+      'description' => t('The decimal of latitude of the DPD Shop related to the line item.'),
+    ),
+  );
+}
+
+/**
+ * Load multiple line item shops for a given order.
+ *
+ * @param array $order_ids
+ *   An array of order_id's
+ * @param array $order_conditions
+ *   An associative array of conditions on the commerce_order table
+ *
+ * @return object
+ *   An object array of DPD Shop items indexed by order id.
+ */
+function commerce_dpd_shop_delivery_line_item_shop_load_by_order_multiple($order_ids = array(), $order_conditions = array(), $limit = NULL) {
+  $cache = &drupal_static(__FUNCTION__, array());
+  $have_order_ids = !empty($order_ids) && is_array($order_ids);
+  $have_order_conditions = !empty($order_conditions);
+
+  // exit if nothing to query
+  if (!$have_order_ids && !$have_order_conditions) {
+    return array();
+  }
+
+  // intialize cach hits
+  $cache_hits = array();
+
+  // initialize query order ids to ids given
+  $query_order_ids = $have_order_ids ? $order_ids : array();
+
+  // check cache
+  if ($have_order_ids && !$have_order_conditions && !empty($cache)) {
+    $cache_hits = array_intersect_key($cache, drupal_map_assoc($order_ids));
+    $query_order_ids = array_diff($order_ids, array_keys($cache));
+
+    // exit early if all in cache
+    if (empty($query_order_ids)) {
+      return $cache_hits;
+    }
+  }
+
+  // get shipping line item ids for order
+  $query = db_select('commerce_dpd_shop_delivery_line_item_shop', 'p')->fields('p');
+  $query->join('commerce_line_item', 'li', 'p.line_item_id = li.line_item_id');
+  $query->addField('li', 'order_id');
+
+  if (!empty($query_order_ids)) {
+    $query->condition('li.order_id', $query_order_ids, 'IN');
+  }
+
+  if ($have_order_conditions) {
+    $order_schema = drupal_get_schema('commerce_order');
+    $add_order_join = FALSE;
+    foreach ($order_conditions as $field => $field_value) {
+      if (isset($order_schema['fields'][$field])) {
+        $add_order_join = TRUE;
+        $query->condition('o.' . $field, $field_value);
+      }
+    }
+
+    if ($add_order_join) {
+      $query->join('commerce_order', 'o', 'o.order_id = li.order_id');
+    }
+  }
+
+  // Order by line item id descending to show latest at the top
+  $query->orderBy('line_item_id', 'DESC');
+
+  // Add a limit if specified.
+  if (!empty($limit)) {
+    $limit = $limit - count($cache_hits);
+    $query->range(0, $limit);
+  }
+
+  // Execute query
+  $result = $query->execute();
+  $records = $result->fetchAllAssoc('order_id');
+
+  // Process results
+  $return = $cache_hits;
+  if (!empty($records)) {
+    // update cache with new records
+    $cache = $records + $cache;
+
+    // update return with new records
+    $return = $records + $return;
+  }
+
+  return $return;
+}
+
+/**
+ * Returns DPD Shop associated with the order
+ *
+ * @param integer $order_id
+ *   The Commerce Order Id
+ * @return NULL or object
+ *  The DPD Shop record object. The return is cached per order id.
+ */
+function commerce_dpd_shop_delivery_line_item_shop_load_by_order($order_id) {
+  if (empty($order_id)) {
+    return NULL;
+  }
+  $shop_items = commerce_dpd_shop_delivery_line_item_shop_load_by_order_multiple(array($order_id));
+  return !empty($shop_items) ? reset($shop_items) : NULL;
+}
+
+/**
+ * Save a Shop for a line item
+ *
+ * @param integer $line_item_id
+ *   A single line item ID.
+ * @param integer $shop_id
+ *   A DPD shop id
+ * @param long $shop_lon
+ *   The Longitude for the Shop
+ * @param long $shop_lat
+ *   The Latitude for the Shop
+ *
+ * @return boolean or object
+ *   If the record insert or update failed, returns FALSE.
+ *   If it succeeded, returns SAVED_NEW or SAVED_UPDATED, depending on the
+ *   operation performed.
+ */
+function commerce_dpd_shop_delivery_line_item_shop_save($line_item_id, $shop_id, $shop_lon, $shop_lat) {
+
+  if (empty($line_item_id) || empty($shop_id) || empty($shop_lon) || empty($shop_lat)) {
+    return FALSE;
+  }
+
+  $record = new stdClass;
+  $primary_keys = array();
+
+  $original_shop_id = NULL;
+  $existing = commerce_dpd_shop_delivery_line_item_shop_load($line_item_id);
+  if (!empty($existing)) {
+    //$original_shop_id = $existing->shop_id;
+    $record = clone($existing);
+    $primary_keys[] = 'id';
+  }
+
+  // set new values
+  $record->line_item_id = $line_item_id;
+  $record->shop_id = $shop_id;
+  $record->shop_lon = $shop_lon;
+  $record->shop_lat = $shop_lat;
+  $return = drupal_write_record('commerce_dpd_shop_delivery_line_item_shop', $record, $primary_keys);
+
+  if ($return) {
+    if ($return == SAVED_NEW) {
+      // Notify other modules that this shop has been inserted.
+      rules_invoke_all('commerce_dpd_shop_delivery_line_item_shop_insert', $record);
+    }
+    else if ($return == SAVED_UPDATED) {
+      // Notify other modules that this point has been updated.
+      rules_invoke_all('commerce_dpd_shop_delivery_line_item_shop_update', $record, $existing);
+    }
+  }
+
+  return $return;
+}
+
+/**
+ * Delete a Shop for a line item
+ *
+ * @param integer $line_item_id
+ *   The Line Item ID
+ */
+function commerce_dpd_shop_delivery_line_item_shop_delete($line_item_id) {
+  $record = commerce_dpd_shop_delivery_line_item_shop_load($line_item_id);
+  if (!empty($record)) {
+    // Notify other modules that this point will be deleted.
+    rules_invoke_all('commerce_dpd_shop_delivery_line_item_shop_delete', $record);
+
+    db_delete('commerce_dpd_shop_delivery_line_item_shop')
+      ->condition('line_item_id', $line_item_id)
+      ->execute();
+  }
+}
+
+/**
+ * Request a Map of DPD Shops
+ *
+ * @param object $order
+ *   The fully loaded Commerce Order Object
+ * @param array $shipping_service
+ *   An array of a shipping service
+ * @param boolean or array
+ *   An array of DPD Address or boolean if FALSE
+ *
+ * @return render($shop_data_source)
+ */
+function commerce_dpd_shop_delivery_request_map($order, $shipping_service, $custom_address) {
+  $shop_data_map_source = commerce_dpd_shop_delivery_prepare_shop_data($order, $shipping_service, $custom_address);
+  return render($shop_data_map_source);
+}
+
+/**
+ * Prepare the map for rendering
+ *
+ * @param object $order
+ *   The fully loaded Commerce Order Object
+ * @param array $shipping_service
+ *   An array of a shipping service
+ * @param boolean or array
+ *   An array of DPD Address or boolean if FALSE
+ *
+ * @return string $output
+ *   Empty string or render-able Array $output
+ */
+function commerce_dpd_shop_delivery_prepare_shop_data($order, $shipping_service, $custom_address) {
+  // Get Settings
+  $setting = commerce_dpd_settings();
+  $map_type = $setting['map_type'];
+  $map_height = $setting['map_height'];
+
+  if ($custom_address == FALSE) {
+    // Clean the given address inside the $order
+    $dpd_address = commerce_dpd_order_recipient_addressfield($order);
+  }
+  else {
+    $dpd_address = $custom_address;
+  }
+
+  // Make the API Call to DPD.
+  $shops = commerce_dpd_rest_api_get_shops_by_address($dpd_address);
+
+  // Prepare Layers
+  if ($shops) {
+    foreach ($shops as $shop) {
+      $shop_link_path = commerce_dpd_shop_delivery_prepare_link($order, $shipping_service, $shop);
+      $shop_link = l(t('Select'), $shop_link_path);
+      $features[] = array(
+        'type' => 'point',
+        'lat' => $shop->GeoData->Latitude,
+        'lon' => $shop->GeoData->Longitude,
+        'icon' => array(
+          'iconUrl' => url(drupal_get_path('module', 'commerce_dpd_shop_delivery') . '/theme/images/icon_parcelshop.png', array('absolute' => TRUE)),
+        ),
+        'popup' => theme('commerce_dpd_shop_delivery_shop_details', array(
+          'shop_details' => $shop,
+          'shop_select_link' => $shop_link
+        )),
+        'label' => $shop->ShopAddress->Company,
+      );
+    }
+
+    // Prepare Map
+    $map_select = leaflet_map_get_info();
+    // Select the map
+    $map = $map_select[$map_type];
+    // define the height of map
+    $height = $map_height . 'px';
+    $output = leaflet_build_map($map, $features, $height);
+
+  }
+  else {
+    $output = '';
+  }
+
+  return $output;
+
+}
+
+/**
+ * Prepare a link for a DPD Shop
+ *
+ * @param object $order
+ *   The fully loaded Commerce Order Object
+ * @param array $shipping_service
+ *   An array of a shipping service
+ * @param object $shop
+ *   An object for DPD Shop
+ *
+ * @return string $map_back_url
+ *   A string representing the path of the link
+ */
+function commerce_dpd_shop_delivery_prepare_link($order, $shipping_service, $shop) {
+
+  $map_back_url = url(commerce_dpd_shop_delivery_create_map_select_callback_path($order->order_number, $shipping_service['name']), array(
+    'absolute' => TRUE,
+    'query' => array(
+      'token' => drupal_get_token('commerce_dpd_shop_delivery/map-select/' . $order->order_id . '/' . $shipping_service['name']),
+      'destination' => 'checkout/' . $order->order_id . '/shipping',
+      'shop_id' => $shop->ParcelShopID,
+      'shop_lon' => $shop->GeoData->Longitude,
+      'shop_lat' => $shop->GeoData->Latitude,
+    ),
+  ));
+
+  return $map_back_url;
+}
+
+/**
+ * Create Map Select Callback Path
+ *
+ * @param integer $order_id
+ *   The Commerce Order ID
+ * @param string $shipping_service_name
+ *   An string representing the name of a shipping service
+ * @return string PATH
+ *   A string representing the Path
+ *
+ * @return string $map_back_url
+ *   A string representing the path of the link
+ */
+function commerce_dpd_shop_delivery_create_map_select_callback_path($order_id, $shipping_service_name) {
+  return 'commerce_dpd_shop_delivery/map-select/' . $order_id . '/' . $shipping_service_name;
+}
+
+/**
+ * Can Ship To Country Check
+ *
+ * @param string $country_code
+ *   The 2 digit country code
+ *
+ * @return boolean TRUE or FALSE
+ *   TRUE if shipping available.
+ *   FALSE if shipping not available for that country
+ */
+function commerce_dpd_shop_delivery_can_ship_to_country($country_code) {
+  $settings = commerce_dpd_settings();
+
+  if (empty($country_code)) {
+    return FALSE;
+  }
+
+  // DENY if no ship from country
+  if (empty($settings['ship_from_shop_delivery'])) {
+    return FALSE;
+  }
+
+  // DENY if not in any enabled countries
+  if (empty($settings['ship_to_shop_delivery']) ||
+    in_array($country_code, $settings['ship_to_shop_delivery']) == FALSE
+  ) {
+    return FALSE;
+  }
+
+  return TRUE;
+
+}
+
+/**
+ * Create a line item for the DPD shipping method
+ *
+ * @param $order
+ *   An order object
+ * @param $shipping_service_name
+ *   The shipping service machine name
+ * @param $shop_id
+ *   The DPD shop id associated with the shipping service
+ * @param $skip_order_save
+ *   Boolean indicating whether or not to skip saving the order in this function.
+ *
+ * @return
+ *   The saved shipping line item object or NULL on failure.
+ */
+function commerce_dpd_shop_delivery_add_shipping_line_item($order, $shipping_service_name, $shop_id, $shop_lon, $shop_lat, $skip_order_save = FALSE) {
+  $shipping_service = commerce_shipping_service_load($shipping_service_name);
+  if (empty($shipping_service)) {
+    return NULL;
+  }
+
+  // Collect shipping rates for the order.
+  commerce_shipping_collect_rates($order);
+  if (empty($order->shipping_rates) || empty($order->shipping_rates[$shipping_service_name])) {
+    return NULL;
+  }
+
+  // Extract the unit price from the calculated rate.
+  $rate_line_item = $order->shipping_rates[$shipping_service_name];
+  $rate_line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $rate_line_item);
+  $unit_price = $rate_line_item_wrapper->commerce_unit_price->value();
+
+  // Create a new shipping line item with the calculated rate.
+  $line_item = commerce_shipping_line_item_new($shipping_service_name, $unit_price, $order->order_id, $rate_line_item->data, $rate_line_item->type);
+
+  // Add the service details to the line item's data array.
+  $line_item->data['service_details'] = array(
+    'shop_id' => $shop_id,
+    'shop_lon' => $shop_lon,
+    'shop_lat' => $shop_lat
+  );
+
+  // Delete any existing shipping line items from the order.
+  commerce_shipping_delete_shipping_line_items($order, $skip_order_save);
+
+  // Save and add the line item to the order.
+  return commerce_shipping_add_shipping_line_item($line_item, $order, $skip_order_save);
+}
+
+/**
+ * Implements hook_commerce_line_item_insert().
+ */
+function commerce_dpd_shop_delivery_commerce_line_item_insert($line_item) {
+  commerce_dpd_shop_delivery_commerce_line_item_update($line_item);
+}
+
+/**
+ * Implements hook_commerce_line_item_update().
+ */
+function commerce_dpd_shop_delivery_commerce_line_item_update($line_item) {
+
+  $shop = commerce_dpd_shop_delivery_extract_line_item_shop($line_item);
+  $shop_lon = commerce_dpd_shop_delivery_extract_line_item_shop_longitude($line_item);
+  $shop_lat = commerce_dpd_shop_delivery_extract_line_item_shop_latitude($line_item);
+
+  if ($shop && $shop_lon && $shop_lat) {
+    commerce_dpd_shop_delivery_line_item_shop_save($line_item->line_item_id, $shop, $shop_lon, $shop_lat);
+  }
+}
+
+/**
+ * Implements hook_commerce_line_item_delete().
+ */
+function commerce_dpd_shop_delivery_commerce_line_item_delete($line_item) {
+  commerce_dpd_shop_delivery_line_item_shop_delete($line_item->line_item_id);
+}
+
+/**
+ * Returns DPD shops stored on a line item
+ */
+function commerce_dpd_shop_delivery_extract_line_item_shop($line_item) {
+  $details = commerce_dpd_shop_delivery_extract_service_details($line_item);
+  if ($details && !empty($details['shop_id'])) {
+    return $details['shop_id'];
+  }
+}
+
+/**
+ * Returns DPD shop longitude stored on a line item
+ */
+function commerce_dpd_shop_delivery_extract_line_item_shop_longitude($line_item) {
+  $details = commerce_dpd_shop_delivery_extract_service_details($line_item);
+  if ($details && !empty($details['shop_lon'])) {
+    return $details['shop_lon'];
+  }
+}
+
+/**
+ * Returns DPD shop latitude stored on a line item
+ */
+function commerce_dpd_shop_delivery_extract_line_item_shop_latitude($line_item) {
+  $details = commerce_dpd_shop_delivery_extract_service_details($line_item);
+  if ($details && !empty($details['shop_lat'])) {
+    return $details['shop_lat'];
+  }
+}
+
+/**
+ * Returns DPD service details stored on a line item
+ */
+function commerce_dpd_shop_delivery_extract_service_details($line_item) {
+  $details = array();
+
+  if (isset($line_item->data) && isset($line_item->data['service_details']) &&
+    isset($line_item->data['shipping_service']) &&
+    isset($line_item->data['shipping_service']['shipping_method']) &&
+    $line_item->data['shipping_service']['shipping_method'] == 'dpd_shop_delivery'
+  ) {
+
+    $details = $line_item->data['service_details'];
+  }
+
+  return $details;
+}
+
+/**
+ * Find DPD shipping line item on the order
+ *
+ * @param $order
+ *   An order object
+ *
+ * @return
+ *   The DPD shipping line item object or NULL.
+ */
+function commerce_dpd_shop_delivery_get_shipping_line_item($order) {
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  foreach ($order_wrapper->commerce_line_items as $line_item_wrapper) {
+    if ($line_item_wrapper->type->value() == 'shipping') {
+      $line_item = $line_item_wrapper->value();
+      $details = commerce_dpd_shop_delivery_extract_service_details($line_item);
+      if (isset($details)) {
+        return $line_item;
+      }
+    }
+  }
+}
+
+/**
+ * Load Shop for a given line item id
+ *
+ * @param integer $line_item_id
+ *   A single line item ID.
+ *
+ * @return object $shops or boolean FALSE
+ *   A DPD Shop item.
+ */
+function commerce_dpd_shop_delivery_line_item_shop_load($line_item_id) {
+  if (empty($line_item_id)) {
+    return NULL;
+  }
+
+  $shops = commerce_dpd_shop_delivery_line_item_shop_load_multiple(array($line_item_id));
+  return $shops ? reset($shops) : FALSE;
+
+}
+
+/**
+ * Load multiple line item shops.
+ *
+ * @param array $line_item_ids
+ *   An array of line items IDs.
+ *
+ * @return array
+ *   An array of DPD Shop items indexed by id.
+ */
+function commerce_dpd_shop_delivery_line_item_shop_load_multiple(array $line_item_ids) {
+  if (empty($line_item_ids)) {
+    return array();
+  }
+
+  $query = db_select('commerce_dpd_shop_delivery_line_item_shop', 'p')
+    ->fields('p')
+    ->condition('p.line_item_id', $line_item_ids, 'IN');
+  $result = $query->execute();
+  $return = $result->fetchAllAssoc('id');
+
+  return $return;
+}
+
+/**
+ * Implements hook_hook_info().
+ */
+function commerce_dpd_shop_delivery_hook_info() {
+  $base_info = array(
+    'group' => 'commerce',
+  );
+
+  $hooks = array(
+    'commerce_dpd_shop_delivery_service_insert' => $base_info,
+    'commerce_dpd_shop_delivery_service_update' => $base_info,
+    'commerce_dpd_shop_delivery_service_delete' => $base_info,
+    'commerce_dpd_shop_delivery_line_item_shop_insert' => $base_info,
+    'commerce_dpd_shop_delivery_line_item_shop_update' => $base_info,
+    'commerce_dpd_shop_delivery_line_item_shop_delete' => $base_info,
+  );
+
+  return $hooks;
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ * - Add DPD Shop reference on order view
+ */
+function commerce_dpd_shop_delivery_field_extra_fields() {
+  return array(
+    'commerce_order' => array(
+      'commerce_order' => array(
+        'form' => array(
+          'commerce_dpd_shop_delivery_shop' => array(
+            'label' => t('DPD Shop Delivery Shop'),
+            'description' => t('DPD Shop referenced on the order'),
+            'weight' => 10,
+          ),
+        ),
+        'display' => array(
+          'commerce_dpd_shop_delivery_shop' => array(
+            'label' => t('DPD Delivery Shop'),
+            'description' => t('DPD Shop referenced on the order'),
+            'weight' => 99,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_attach_view_alter().
+ * - Add extra fields to Order
+ *
+ * @param object $output
+ * @param object $context
+ */
+function commerce_dpd_shop_delivery_field_attach_view_alter(&$output, $context) {
+  if (!isset($context['entity_type']) || !isset($context['entity'])) {
+    return NULL;
+  }
+
+  $entity = $context['entity'];
+
+  // Add DPD Shop for orders not rendered in a view
+  if ($context['entity_type'] == 'commerce_order' && isset($context['view_mode']) && $context['view_mode'] != '_custom') {
+    $entity_wrapper = entity_metadata_wrapper($context['entity_type'], $entity);
+    $extra_fields_info = field_info_extra_fields($context['entity_type'], $entity_wrapper->getBundle(), 'display');
+
+    $shop_id = $entity_wrapper->dpd_shop_id->value();
+
+    if (!empty($shop_id)) {
+      $field_label = isset($extra_fields_info['commerce_dpd_shop_delivery_shop']['label']) ?
+        $extra_fields_info['commerce_dpd_shop_delivery_shop']['label'] : t('DPD Shop');
+
+      $dpd_shop = $entity_wrapper->dpd_shop->value();
+      $dpd_shop_lon = $dpd_shop->shop_lon;
+      $dpd_shop_lat = $dpd_shop->shop_lat;
+
+      $dpd_selected_shop_details = commerce_dpd_rest_api_get_shops_by_geodata($dpd_shop_lon, $dpd_shop_lat, 1);
+
+      $output['commerce_dpd_shop_delivery_shop'] = array(
+        '#prefix' => '<div class="commerce-dpd-shop-delivery-shop">',
+        '#suffix' => '</div>',
+        '#type' => 'fieldset',
+        '#collapsible' => FALSE,
+        '#field_type' => 'commerce_dpd_shop_delivery_shop_extra_field',
+        '#field_name' => 'commerce_dpd_shop_delivery_shop_extra_field',
+        '#view_mode' => $context['view_mode'],
+        '#title' => check_plain($field_label),
+        '#attributes' => array('class' => array('commerce-dpd-shop-delivery-shop-details-order')),
+        0 => array(
+          '#weight' => -1,
+          '#markup' => theme('commerce_dpd_shop_delivery_shop_details', array(
+            'shop_details' => $dpd_selected_shop_details[0],
+          )),
+        ),
+      );
+    }
+  }
+}

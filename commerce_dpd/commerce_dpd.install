@@ -1,0 +1,208 @@
+<?php
+
+/**
+ * @file
+ * Defines the database schema for DPD Shipping.
+ */
+
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_dpd_schema() {
+  $schema = array();
+
+  $schema['commerce_dpd_orders'] = array(
+    'description' => 'Stores all Commerce Orders checked out with a DPD Shipping Method.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The primary identifier for an association.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'order_id' => array(
+        'description' => 'The primary identifier for a commerce order.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'shipping_method' => array(
+        'description' => 'The name of the shipping method.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'shipping_service' => array(
+        'description' => 'The name of the shipping service.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'order_id' => array('order_id'),
+    )
+  );
+
+  // Label Entity Table
+  $schema['commerce_dpd_label'] = array(
+    'description' => 'The base table for commerce_dpd_label.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The primary identifier for the commerce_dpd_label.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'type' => array(
+        'description' => 'The type (bundle) of this task.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'The title of the commerce_dpd_label.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'created' => array(
+        'description' => 'The Unix timestamp when the commerce_dpd_label was created.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'changed' => array(
+        'description' => 'The Unix timestamp when the commerce_dpd_label was most recently saved.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'description' => array(
+        'description' => 'task description.',
+        'type' => 'text',
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+
+  // Label Type Entity Table
+  $schema['commerce_dpd_label_type'] = array(
+    'description' => 'Stores information about all defined commerce_dpd_label types.',
+    'fields' => array(
+        'id' => array(
+          'type' => 'serial',
+          'not null' => TRUE,
+          'description' => 'Primary Key: Unique task type ID.',
+        ),
+        'type' => array(
+          'description' => 'The machine-readable name of this type.',
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+        ),
+        'label' => array(
+          'description' => 'The human-readable name of this type.',
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => TRUE,
+          'default' => '',
+        ),
+        'description' => array(
+          'description' => 'A brief description of this type.',
+          'type' => 'text',
+          'not null' => TRUE,
+          'size' => 'medium',
+          'translatable' => TRUE,
+        ),
+      ) + entity_exportable_schema_fields(),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      'type' => array('type'),
+    ),
+  );
+
+  // Parcel Life Cycle Table
+  $schema['commerce_dpd_parcel_life_cycle'] = array(
+    'description' => 'Stores information about DPD Parcel Life Cycle on commerce orders.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The primary identifier for an parcel item.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'order_id' => array(
+        'description' => 'The primary identifier for a commerce order.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'parcel_number' => array(
+        'description' => 'The DPD Parcel number.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'order_id' => array('order_id'),
+      'parcel_number' => array('parcel_number'),
+    )
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function commerce_dpd_requirements($phase) {
+  $requirements = array();
+  if ($phase == 'runtime') {
+    $t = get_t();
+    $library = libraries_load('dpd-cloud-rest');
+    if (!$library['installed'] || !class_exists('DPD_Cloud_REST')) {
+      $requirements['dpd-cloud-rest'] = array(
+        'title' => $t('DPD Cloud REST API php class'),
+        'value' => $t('Latest version available'),
+        'severity' => REQUIREMENT_ERROR,
+        'description' => $t('You need to download the !dpd_cloud_rest and extract the entire contents of the archive into the %path directory within %library_folder subfolder on your server.', array(
+            '!dpd_cloud_rest' => l($t('DPD Cloud REST API php class'), $library['download url']),
+            '%path' => 'sites/all/libraries',
+            '%library_folder' => 'dpd-cloud-rest'
+          )),
+      );
+    }
+    else {
+      $requirements['dpd-cloud-rest'] = array(
+        'title' => $t('DPD Cloud REST API php class'),
+        'severity' => REQUIREMENT_OK,
+        'value' => $t('Enabled'),
+      );
+    }
+  }
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_dpd_uninstall() {
+  // Delete Settings Variable
+  variable_del('commerce_dpd_settings');
+  // Delete Label PDF file field.
+  field_delete_field(COMMERCE_DPD_LABEL_PDF_FIELD);
+  // Delete Label Reference field.
+  field_delete_field(COMMERCE_DPD_LABEL_REF_FIELD);
+}

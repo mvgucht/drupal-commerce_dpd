@@ -1,0 +1,118 @@
+<?php
+
+/**
+ * @file
+ * Defines the database schema for Kiala Shipping.
+ */
+
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_dpd_shop_delivery_schema() {
+  $schema = array();
+
+  $schema['commerce_dpd_shop_delivery_service'] = array(
+    'description' => 'Stores information about shipping services created through the DPD Shop Delivery module.',
+    'fields' => array(
+      'name' => array(
+        'description' => 'The machine-name of the service.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'title' => array(
+        'description' => 'The human-readable title of the service.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'display_title' => array(
+        'description' => 'The title of the service displayed to customers.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'description' => array(
+        'description' => 'A brief description of the service.',
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'medium',
+      ),
+      'rules_component' => array(
+        'description' => 'Boolean indicating whether or not this service should have a default Rules component for enabling it for orders.',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'amount' => array(
+        'description' => 'The amount of the base rate of the service.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'currency_code' => array(
+        'description' => 'The currency code of the base rate of the service.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+      ),
+      'data' => array(
+        'description' => 'A serialized array of additional data.',
+        'type' => 'text',
+        'size' => 'big',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('name'),
+  );
+
+  $schema['commerce_dpd_shop_delivery_line_item_shop'] = array(
+    'description' => 'Stores DPD Shop ids associated with a line item.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The primary identifier for an association.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'line_item_id' => array(
+        'description' => 'The primary identifier for a line item.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'shop_id' => array(
+        'description' => 'The DPD Shop identifier.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'shop_lon' => array(
+        'type' => 'numeric',
+        'precision' => 18,
+        'scale' => 12,
+        'not null' => FALSE,
+      ),
+      'shop_lat' => array(
+        'type' => 'numeric',
+        'precision' => 18,
+        'scale' => 12,
+        'not null' => FALSE,
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes' => array(
+      'line_item_id' => array('line_item_id'),
+      'line_shop' => array('line_item_id', 'shop_id'),
+    )
+  );
+
+  return $schema;
+}

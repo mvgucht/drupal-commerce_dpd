@@ -1,0 +1,10 @@
+/** Checkout service details selection form **/
+.commerce-dpd-parcel-life-cycle-states {
+    margin-top: 25px;
+
+}
+
+.commerce-dpd-parcel-life-cycle-states table td {
+    background: url(images/dpd-arrow-transparent.png) no-repeat 10px center;
+    padding-left: 40px;
+}

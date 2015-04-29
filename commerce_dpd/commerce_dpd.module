@@ -1,0 +1,1875 @@
+<?php
+
+/**
+ * @file
+ * Commerce DPD Core Module file.
+ */
+
+define('COMMERCE_DPD_LABEL_ENTITY', 'commerce_dpd_label');
+
+define('COMMERCE_DPD_LABEL_BUNDLE', 'commerce_dpd_label');
+
+define('COMMERCE_DPD_LABEL_PDF_FIELD', 'commerce_dpd_label_pdf');
+
+define('COMMERCE_DPD_LABEL_REF_FIELD', 'commerce_dpd_label_ref');
+
+define('COMMERCE_DPD_LABEL_ENTITY_PATH', 'admin/commerce/orders/dpd-labels/label/');
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_dpd_menu() {
+  $items = array();
+
+  // General Global DPD API Settings.
+  $items['admin/commerce/config/dpd'] = array(
+    'title' => 'Configure Commerce DPD Shipping',
+    'description' => 'Configure the DPD shipping module.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_dpd_settings_form'),
+    'access arguments' => array('administer shipping'),
+    'file' => 'includes/admin/commerce_dpd.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'weight' => 0,
+  );
+  // Entity Path for Label.
+  $items['admin/commerce/orders/dpd-labels/label/%commerce_dpd_label'] = array(
+    'title' => 'DPD Label',
+    'page callback' => 'commerce_dpd_label_view_entity',
+    'page arguments' => array(5),
+    'access callback' => 'commerce_dpd_label_access_callback',
+    'access arguments' => array('view', 5),
+  );
+  // Create single DPD Label from Order.
+  $items['admin/commerce/orders/%commerce_order/dpd-order'] = array(
+    'title' => 'DPD Create Label',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_dpd_label_admin_form', 3),
+    'access callback' => 'commerce_dpd_label_admin_page_access',
+    'access arguments' => array(3),
+    'file' => 'includes/admin/commerce_dpd_label.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => -2,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+  );
+  // Parcel Life Cycle Admin Form.
+  $items['admin/commerce/orders/%commerce_order/dpd_parcel_life_cycle'] = array(
+    'title' => 'DPD Parcel Life Cycle',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_dpd_parcel_life_cycle_admin_form', 3),
+    'access callback' => 'commerce_dpd_parcel_life_cycle_admin_page_access',
+    'access arguments' => array(3),
+    'file' => 'includes/admin/commerce_dpd_parcel_life_cycle.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => -1,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+  );
+  // Parcel Life Cycle Form for Customers.
+  $items['parcel_life_cycle'] = array(
+    'title' => 'Track DPD shipment',
+    'page callback' => 'commerce_dpd_parcel_life_cycle_customer_page',
+    'access arguments' => array('view dpd parcel life cycle'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+
+}
+
+/**
+ * Implements hook_permission().
+ */
+function commerce_dpd_permission() {
+  return array(
+    'administer dpd services' => array(
+      'title' => t('Administer all DPD services.'),
+      'description' => t('Allow users to use complete functionality of DPD.'),
+      'restrict access' => TRUE,
+    ),
+    'access dpd api debug' => array(
+      'title' => t('Access the DPD API debugging messages.'),
+      'description' => t('Allow users to see DPD API debugging messages.'),
+      'restrict access' => TRUE,
+    ),
+    'administer dpd label entities' => array(
+      'title' => t('Administer DPD Label Entities'),
+      'description' => t('Allows a user to administer DPD Label entities'),
+    ),
+    'view dpd label entities' => array(
+      'title' => t('View DPD Label Entity'),
+      'description' => t('Allow users to view the dpd label entities.'),
+    ),
+    'create dpd label entities' => array(
+      'title' => t('Create dpd label Entities'),
+      'description' => t('Allow users to create dpd label entities.'),
+    ),
+    'edit dpd label entities' => array(
+      'title' => t('Edit dpd label Entities'),
+      'description' => t('Allow users to edit dpd label entities.'),
+    ),
+    'delete dpd label entities' => array(
+      'title' => t('Delete dpd label Entities'),
+      'description' => t('Allow users to delete lawmakers entities.'),
+    ),
+    'use dpd label bulk operations' => array(
+      'title' => t('Do bulk operations on dpd label entities'),
+      'description' => t('Allow users to do bulk operations.'),
+    ),
+    'administer dpd parcel life cycle' => array(
+      'title' => t('Administrative access to DPD Parcel Life Cycle'),
+      'description' => t('Access DPD Parcel Life Cycle for Admins.'),
+    ),
+    'view dpd parcel life cycle' => array(
+      'title' => t('View DPD Parcel Life Cycle for customers.'),
+      'description' => t('Allow users to view the DPD Parcel Life Cycle.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_libraries_info().
+ *
+ * For defining external libraries.
+ */
+function commerce_dpd_libraries_info() {
+  // A very simple library. No changing APIs (hence, no versions), no variants.
+  // Expected to be extracted into 'sites/all/libraries/simple'.
+  $libraries['dpd-core-soap'] = array(
+    'name' => 'DPD Core Soap API php class',
+    'vendor url' => 'https://www.dpd.com',
+    'download url' => 'https://github.com/DPDBeNeLux/php-DPD_Core_Class/archive/master.zip',
+    // Force a version value for the libraries api.
+    'version' => TRUE,
+    'files' => array(
+      'php' => array(
+        'DPD_Core_SOAP.api.class.inc',
+      ),
+    ),
+  );
+
+  return $libraries;
+
+}
+
+/**
+ * Implements hook_enable().
+ */
+function commerce_dpd_enable() {
+  // Check if there is already the required tcpdf and fdpi library installed.
+  if (!commerce_dpd_get_library('tcpdf')) {
+    drupal_set_message(t('You need to install TCPDF Library in order to use the Bulk Print Action to print multiple DPD Labels!'));
+  }
+  if (!commerce_dpd_get_library('fpdi')) {
+    drupal_set_message(t('You need to install FPDI Library in order to use the Bulk Print Action to print multiple DPD Labels!'));
+  }
+
+  // Define a Label PDF file for the DPD Label entities.
+  field_cache_clear();
+  $field = field_info_field(COMMERCE_DPD_LABEL_PDF_FIELD);
+  $instance = field_info_instance(COMMERCE_DPD_LABEL_ENTITY, COMMERCE_DPD_LABEL_PDF_FIELD, COMMERCE_DPD_LABEL_BUNDLE);
+  // Check if our field is not already created.
+  if (empty($field)) {
+    // Create an entityreference field for references from days to events.
+    $field = array(
+      'field_name' => COMMERCE_DPD_LABEL_PDF_FIELD,
+      'type' => 'file',
+      'cardinality' => 1,
+    );
+    field_create_field($field);
+  }
+
+  // Check if our instance is not already installed.
+  if (empty($instance)) {
+    $instance = array(
+      'label' => 'Label PDF',
+      'widget' => array(
+        'weight' => '1',
+        'type' => 'file_generic',
+        'module' => 'file',
+        'active' => 1,
+      ),
+      'settings' => array(
+        'file_extensions' => 'pdf',
+      ),
+      'display' => array(
+        'administrator' => array(
+          'label' => 'hidden',
+          'type' => 'pdf_default',
+          'weight' => '0',
+          'settings' => array(
+            'keep_pdfjs' => 1,
+            'width' => '400px',
+            'height' => '600px',
+          ),
+          'module' => 'pdf',
+        ),
+      ),
+      'required' => 0,
+      'description' => '',
+      'field_name' => COMMERCE_DPD_LABEL_PDF_FIELD,
+      'entity_type' => COMMERCE_DPD_LABEL_ENTITY,
+      'bundle' => COMMERCE_DPD_LABEL_BUNDLE,
+    );
+    field_create_instance($instance);
+  }
+
+  // Define a Label Reference field for the DPD Label entities.
+  field_cache_clear();
+  $field = field_info_field(COMMERCE_DPD_LABEL_REF_FIELD);
+  $instance = field_info_instance(COMMERCE_DPD_LABEL_ENTITY, COMMERCE_DPD_LABEL_REF_FIELD, COMMERCE_DPD_LABEL_BUNDLE);
+  // Check if our field is not already created.
+  if (empty($field)) {
+    // Create an entityreference field for referencing orders.
+    $field = array(
+      'field_name' => COMMERCE_DPD_LABEL_REF_FIELD,
+      'type' => 'entityreference',
+      'settings' => array(
+        'target_type' => 'commerce_order',
+      ),
+      'cardinality' => -1,
+      'translatable' => FALSE,
+    );
+    field_create_field($field);
+  }
+
+  // Check if our instance is not already installed.
+  if (empty($instance)) {
+    // Create an instance of the field and attach it to the poa day entity.
+    $instance = array(
+      'field_name' => COMMERCE_DPD_LABEL_REF_FIELD,
+      'entity_type' => COMMERCE_DPD_LABEL_ENTITY,
+      'bundle' => COMMERCE_DPD_LABEL_BUNDLE,
+      'label' => 'Commerce DPD Label Reference to Commerce Order',
+      'required' => FALSE,
+      'widget' => array(
+        'type' => 'autocomplete',
+      ),
+    );
+    field_create_instance($instance);
+  }
+
+  drupal_set_message(t("Successfully Installed Commerce DPD and it's Dependencies."));
+}
+
+/**
+ * Getter callback for orders.
+ */
+function commerce_dpd_order_property_getter($order, array $options, $name) {
+  $wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  switch ($name) {
+    case 'dpd_shipment_object':
+      $shipment_objects = commerce_dpd_shipment_load(array('order_id' => $order->order_id));
+      if (!empty($shipment_objects)) {
+        return reset($shipment_objects);
+      }
+      break;
+
+    case 'shipping_method':
+      $shipment_object = $wrapper->dpd_shipment_object->value();
+      if (!empty($shipment_object->shipping_method)) {
+        return $shipment_object->shipping_method;
+      }
+      break;
+
+  }
+}
+
+/**
+ * Load dpd shipment by conditions.
+ *
+ * @param array $conditions
+ *   List of conditions in form column => value.
+ *
+ * @return object $results
+ *   List of shipment objects.
+ */
+function commerce_dpd_shipment_load(array $conditions) {
+
+  $query = db_select('commerce_dpd_orders', 'c')
+    ->fields('c', array('id', 'order_id', 'shipping_method'));
+
+  if (!empty($conditions)) {
+    foreach ($conditions as $column => $value) {
+      $query->condition($column, $value);
+    }
+  }
+
+  $results = $query->execute()->fetchAll();
+  $cache = array();
+  foreach ($results as $result) {
+    $cache[$result->order_id] = $result;
+  }
+
+  return $results;
+}
+
+/**
+ * Implements hook_hook_info().
+ */
+function commerce_dpd_hook_info() {
+  $base_info = array(
+    'group' => 'commerce',
+  );
+
+  $hooks = array(
+    'commerce_dpd_settings_info' => $base_info,
+    'commerce_dpd_settings_info_alter' => $base_info,
+  );
+
+  return $hooks;
+
+}
+
+/**
+ * Retrieve settings values.
+ *
+ * @param array $options
+ *    Takes Field as Key and Field as value.
+ * @return array $values
+ *    Returns the matched elements.
+ */
+function commerce_dpd_settings($options = array()) {
+  $options = !empty($options) ? $options : array();
+
+  $options += array(
+    'conditions' => array(),
+  );
+
+  // Get stored values.
+  $stored_values = variable_get('commerce_dpd_settings', array());
+
+  // Get settings info.
+  $info = commerce_dpd_settings_info($options['conditions']);
+
+  // Only return values in info.
+  $values = array();
+  foreach ($info as $name => $data) {
+    $values[$name] = NULL;
+    if (isset($stored_values[$name])) {
+      $values[$name] = $stored_values[$name];
+    }
+    elseif (isset($data['default'])) {
+      $values[$name] = $data['default'];
+    }
+  }
+
+  return $values;
+}
+
+/**
+ * Returns a keyed array of all settings.
+ *
+ * @param array $conditions
+ *    An associative array where keys are info properties and values are the
+ *    values those properties must have.
+ * @return array $matching_info
+ *    Returns $matching_info or $info
+ */
+function commerce_dpd_settings_info($conditions = array()) {
+  $info = &drupal_static(__FUNCTION__);
+
+  if (!isset($info)) {
+    $info = module_invoke_all('commerce_dpd_settings_info');
+    drupal_alter('commerce_dpd_settings_info', $info);
+  }
+
+  // Apply conditions to the returned info if specified.
+  if (!empty($conditions)) {
+    $matching_info = array();
+    foreach ($info as $name => $data) {
+      $valid = TRUE;
+      foreach ($conditions as $property => $value) {
+        if (!isset($data[$property]) || $data[$property] != $value) {
+          // If the current value for the specified property match the
+          // filter value do not add it to the temporary array.
+          $valid = FALSE;
+          break;
+        }
+      }
+
+      if ($valid) {
+        $matching_info[$name] = $data;
+      }
+    }
+
+    return $matching_info;
+
+  }
+
+  return $info;
+
+}
+
+/**
+ * Returns settings info for a single name.
+ *
+ * @param string $name
+ *    The name of the setting field.
+ * @return array $info
+ *    Returns array of single setting names.
+ */
+function commerce_dpd_settings_info_load($name) {
+  $info = commerce_dpd_settings_info();
+  if (isset($info[$name])) {
+    return $info[$name];
+  }
+}
+
+/**
+ * Inform Users about the General Settings for DPD.
+ */
+function commerce_dpd_form_alter($form, &$form_state, $form_id) {
+
+  $info_link = l(t('DPD API Settings'), 'admin/commerce/config/dpd');
+
+  if ($form['#form_id'] == 'commerce_dpd_classic_predict_settings_form') {
+    drupal_set_message(t('For global DPD Settings visit') . ' ' . $info_link, 'status', FALSE);
+  }
+
+  if ($form['#form_id'] == 'commerce_dpd_shop_delivery_settings_form') {
+    drupal_set_message(t('For global DPD Settings visit') . ' ' . $info_link, 'status', FALSE);
+  }
+
+}
+
+/**
+ * DPD REST API integration - helper functions.
+ */
+
+/**
+ * Build the DPD REST API object.
+ *
+ * @param string $language
+ *    Get locale information about language settings
+ * @return object $dpd_rest_api['language']
+ *    DPD_REST_API The DPD REST API object to be used
+ *    for the DPD REST API methods.
+ */
+function commerce_dpd_rest_api($language = 'en_EN') {
+  $dpd_soap_api = &drupal_static(__FUNCTION__);
+  if (empty($dpd_soap_api['language'])) {
+    libraries_load('dpd-core-soap');
+    $dpd_api_settings = commerce_dpd_settings(array());
+    $delisID = $dpd_api_settings['delisID'];
+    $password = $dpd_api_settings['password'];
+    $dpd_soap_api['language'] = new DPD_Core_SOAP($delisID, $password, $language, false);
+  }
+
+  return $dpd_soap_api['language'];
+}
+
+
+/**
+ * Make an getParcelShopFinderByAddress request to DPD.
+ *
+ * @param array $search_address
+ *    The fully address to be used for building the data to be sent to DPD.
+ * @return bool object
+ *    Array of shops or FALSE
+ */
+function commerce_dpd_rest_api_get_shops_by_address(array $search_address) {
+  $shopfinder_response = commerce_dpd_rest_api_shop_finder_by_address($search_address);
+  if ($shopfinder_response) {
+    return $shopfinder_response->ParcelShopList;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Make a getParcelShopFinderByAddress request to DPD.
+ *
+ * @param array $search_address
+ *    The fully address to be used for building the data to be sent to DPD.
+ * @return bool $return_value
+ *    Array of shops or FALSE.
+ */
+function commerce_dpd_rest_api_shop_finder_by_address(array $search_address) {
+  // Build the DPD API object.
+  $dpd = commerce_dpd_rest_api();
+  $setting = commerce_dpd_settings(array());
+  $max_return = $setting['max_return'];
+  $shopfinder_response = $dpd->getParcelShopFinderByAddress($search_address, $max_return);
+  $return_value = commerce_dpd_rest_api_response($shopfinder_response, 'ParcelShopFinder');
+
+  return $return_value;
+}
+
+/**
+ * Make a getParcelShopFinderByGeoData request to DPD.
+ *
+ * @param long $longitude
+ *    The longitude of the shop.
+ * @param long $latitude
+ *    The latitude of the shop.
+ * @param int $max_results
+ *    Max results of the shop.
+ * @return bool object
+ *    Array of shops or FALSE.
+ */
+function commerce_dpd_rest_api_get_shops_by_geodata($longitude, $latitude, $max_results) {
+  $shopfinder_response = commerce_dpd_rest_api_shop_finder_by_geodata($longitude, $latitude, $max_results);
+  if ($shopfinder_response) {
+    return $shopfinder_response->ParcelShopList;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Make a getParcelShopFinderByGeoData request to DPD.
+ *
+ * @param long $longitude
+ *    The longitude of the shop.
+ * @param long $latitude
+ *    The latitude of the shop.
+ * @param int $max_results
+ *    Max results of the shop.
+ * @return bool or return Array
+ *    Array of shops or FALSE
+ */
+function commerce_dpd_rest_api_shop_finder_by_geodata($longitude, $latitude, $max_results) {
+  // Build the DPD API object.
+  $dpd = commerce_dpd_rest_api();
+  $shopfinder_response = $dpd->getParcelShopFinderByGeoData($longitude, $latitude, $max_results);
+  $return_value = commerce_dpd_rest_api_response($shopfinder_response, 'ParcelShopFinder');
+
+  return $return_value;
+}
+
+/**
+ * Make an order request to DPD.
+ *
+ * @param array $order
+ *    The fully loaded order object to be used for building the data to
+ *    be sent to DPD.
+ * @param array $settings
+ *    An array order settings to be sent with the order data.
+ * @return bool $return_value
+ *    Return object or bool.
+ */
+function commerce_dpd_rest_api_set_order($order, $settings) {
+  $orders = array($order);
+  // Use the multiple orders request, avoiding code duplicates.
+  $return_value = commerce_dpd_rest_api_set_order_multiple($orders, $settings);
+
+  return $return_value;
+}
+
+/**
+ * Make multiple orders request to DPD.
+ *
+ * @param array $orders
+ *    An array of fully loaded order objects to be used for building the data to be sent to DPD.
+ * @param array $settings
+ *    An array order settings to be sent with the order data.
+ * @return bool or return object $return_value
+ *    TRUE or FALSE or object
+ */
+function commerce_dpd_rest_api_set_order_multiple($orders, $settings) {
+  // Build the DPD API object.
+  $dpd = commerce_dpd_rest_api();
+  // Build the orders data.
+  foreach ($orders as $order) {
+    // Data mapping using the order object.
+    $orders_data[] = commerce_dpd_rest_api_set_order_data_mapping($order);
+  }
+
+  $orders_response = $dpd->setOrders('StartOrder', $settings, $orders_data);
+  $return_value = commerce_dpd_rest_api_response($orders_response, 'setOrder');
+
+  return $return_value;
+}
+
+/**
+ * Make a getParcelLifeCycle method REST request to DPD.
+ * Returns the whole tracking data of a DPD Parcel by specifying the parcel number.
+ *
+ * @param string $parcel_no
+ *   4-digit parcel number (with preceding "0").
+ * @return bool object
+ *   TRUE or FALSE or object
+ */
+function commerce_dpd_rest_api_parcel_tracking_data($parcel_no) {
+  // Build the DPD API object.
+  $dpd = commerce_dpd_rest_api();
+  $shopfinder_response = $dpd->getParcelLifeCycle($parcel_no);
+  $return_value = commerce_dpd_rest_api_response($shopfinder_response, 'ParcelLifeCycle');
+
+  return $return_value;
+}
+
+
+/**
+ * Get No pick-up days from a getZipCodeRules method REST request to DPD.
+ * Returns an array of dates with no pick-up parcels.
+ */
+function commerce_dpd_rest_api_zip_code_rules_no_pickup_days() {
+  // Get DPD ZipCodeRules response.
+  $dpd_zip_code_rules = commerce_dpd_rest_api_zip_code_rules();
+  if ($dpd_zip_code_rules) {
+    $no_pickup_days = explode(',', $dpd_zip_code_rules->ZipCodeRules->NoPickupDays);
+    return $no_pickup_days;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Make a getZipCodeRules method REST request to DPD.
+ * Returns general shipping information for a pick-up point.
+ *
+ * @return bool $return_value
+ *    Returns bool or object
+ */
+function commerce_dpd_rest_api_zip_code_rules() {
+  // Build the DPD API object.
+  $dpd = commerce_dpd_rest_api();
+  $shopfinder_response = $dpd->getZipCodeRules();
+  $return_value = commerce_dpd_rest_api_response($shopfinder_response, 'ZipCodeRules');
+
+  return $return_value;
+}
+
+/**
+ * Helper function.
+ * Response processing for a DPD REST method request.
+ * Return value(s), errors handling, debugging and others.
+ *
+ * @param object $response
+ *    The response object returned DPD REST for a DPD REST method request.
+ * @param string $method
+ *    The DPD REST method request.
+ * @return $return_value
+ *    Returns bool or object.
+ */
+function commerce_dpd_rest_api_response($response, $method) {
+  $dpd_api_settings = commerce_dpd_settings(array());
+  $debug_messages = $dpd_api_settings['debug_messages'];
+  $debug_log = $dpd_api_settings['debug_log'];
+  $debug_activated = ((boolean) $debug_messages || ($debug_log && user_access('access dpd api debug')));
+  if (empty($response->ErrorDataList)) {
+    if ($debug_activated) {
+      if ($debug_messages == 2) {
+        $debug_messages = FALSE;
+      }
+      $debug_message = t('Success on DPD RETS %error method.', array('%error' => $method));
+      $log_type = WATCHDOG_INFO;
+      $message_type = 'status';
+    }
+    $return_value = $response;
+  }
+  else {
+    foreach ($response->ErrorDataList as $error) {
+      drupal_set_message($error->ErrorMsgShort, 'error');
+    }
+    if ($debug_activated) {
+      $debug_message = t('Error on DPD RETS %error method.', array('%error' => $method));
+      $log_type = WATCHDOG_WARNING;
+      $message_type = 'error';
+    }
+    $return_value = FALSE;
+  }
+  if (!empty($debug_message)) {
+    $debug_message .= '<br />';
+    $debug_message .= '<pre>' . print_r($response, TRUE) . '</pre>';
+    if ($debug_log) {
+      // Logs a system message.
+      watchdog('Commercerce DPD - REST Request', $debug_message, array(), $log_type);
+    }
+    if ($debug_log) {
+      // Logs a system message.
+      watchdog('Commercerce DPD - REST Request', $debug_message, array(), $log_type);
+    }
+    // Set a debugging message.
+    if (($debug_messages && user_access('access commerce_dpd debug'))) {
+      drupal_set_message($debug_message, $message_type);
+    }
+  }
+
+  return $return_value;
+
+}
+
+/**
+ * Data mapping using the order object for setOrder DPD REST method.
+ *
+ * @param object $order
+ *    The fully loaded order object to be used for
+ *    building the data to be sent to DPD.
+ * @return array $order_data
+ *    return order data Array.
+ */
+function commerce_dpd_rest_api_set_order_data_mapping($order) {
+  // Get the DPD API settings.
+  $dpd_settings = commerce_dpd_settings(array());
+
+  // Real data mapping.
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  $dpd_shipment_object = $order_wrapper->dpd_shipment_object->value();
+  $dpd_shipping_method = $dpd_shipment_object->shipping_method;
+  $shop_id = $order_wrapper->dpd_shop_id->value();
+
+  if ($dpd_shipping_method == 'dpd_shop_delivery') {
+    $dpd_ship_service = 'Shop_Delivery';
+  }
+
+  if ($dpd_shipping_method == 'dpd_classic_predict') {
+    $dpd_ship_service = 'Classic_Predict';
+  }
+
+  $order_data['ship_address'] = commerce_dpd_order_recipient_addressfield($order);
+  // Token replace for extra ship address data.
+  $order_data['ship_address']['Salutation'] = token_replace($dpd_settings['salutation'], array('commerce-order' => $order));
+  $order_data['parcel_data']['ShipService'] = $dpd_ship_service;
+  $order_data['parcel_data']['Weight'] = token_replace($dpd_settings['weight'], array('commerce-order' => $order));
+  $order_data['parcel_data']['Content'] = token_replace($dpd_settings['content'], array('commerce-order' => $order));
+  $order_data['parcel_data']['YourInternalID'] = $order->order_number;
+  $order_data['parcel_data']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));
+  $order_data['parcel_data']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));;
+
+  if (!empty($shop_id)) {
+    $order_data['parcel_shop_id'] = $shop_id;
+  }
+
+  return $order_data;
+}
+
+/**
+ * Write the used shipping method and shipping service
+ * into database table after checkout has been completed.
+ *
+ * @param object $order
+ *    The commerce order object.
+ */
+function commerce_dpd_commerce_checkout_complete($order) {
+
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  foreach ($order_wrapper->commerce_line_items as $line_item_wrapper) {
+    if ($line_item_wrapper->type->value() == "shipping") {
+      // Shipping data:
+      $shipping_data = $line_item_wrapper->value()->data;
+      // Shipping method:
+      $line_item_method = $shipping_data['shipping_service']['shipping_method'];
+      // Shipping service:
+      $line_item_service = $shipping_data['shipping_service']['title'];
+    }
+  }
+
+  if ($line_item_method && $line_item_service) {
+    if (commerce_dpd_check_shipping_method($line_item_method)) {
+      $record = array();
+      $record['order_id'] = $order->order_id;
+      $record['shipping_method'] = $line_item_method;
+      $record['shipping_service'] = $line_item_service;
+      //drupal_write_record
+      drupal_write_record('commerce_dpd_orders', $record);
+    }
+  }
+}
+
+/**
+ * Get shipping methods
+ * @return array $shipping_methods
+ *    Returns an Array with shipping methods.
+ */
+function commerce_dpd_get_shipping_methods() {
+  $methods = commerce_shipping_methods();
+  $shipping_methods = array();
+
+  if ($methods) {
+    foreach ($methods as $method) {
+      if ($method['module'] == 'commerce_dpd_classic_predict' || $method['module'] == 'commerce_dpd_shop_delivery') {
+        $shipping_methods[] = $method['name'];
+      }
+    }
+  }
+
+  return $shipping_methods;
+
+}
+
+/**
+ * Check DPD shipping methods
+ *
+ * @param string $name
+ *    The name of the shipping method.
+ * @return bool $dpd_shipping
+ *    Returns false or true.
+ */
+function commerce_dpd_check_shipping_method($name) {
+  $dpd_shipping = FALSE;
+
+  if ($name) {
+    $shipping_methods = commerce_dpd_get_shipping_methods();
+    $dpd_shipping = in_array($name, $shipping_methods);
+  }
+
+  return $dpd_shipping;
+
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function commerce_dpd_views_api() {
+
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'commerce_dpd') . '/includes/views',
+  );
+
+}
+
+/**
+ * Returns Recipient's addressfield based on the given order
+ * Processes for DPD API requests.
+ *
+ * @param object $order
+ *    The fully loaded $order object.
+ * @return array $address
+ *    An addressfield array.
+ */
+function commerce_dpd_order_addressfield($order) {
+  $address = array();
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  // Try shipping first.
+  if (isset($order_wrapper->commerce_customer_shipping)) {
+    if (isset($order_wrapper->commerce_customer_shipping->commerce_customer_address)) {
+      $field_address = $order_wrapper->commerce_customer_shipping->commerce_customer_address->value();
+      if (!empty($field_address)) {
+        $address = $field_address;
+      }
+    }
+  }
+
+  // Fallback to billing.
+  if (empty($address)) {
+    if (isset($order_wrapper->commerce_customer_billing)) {
+      if (isset($order_wrapper->commerce_customer_billing->commerce_customer_address)) {
+        $field_address = $order_wrapper->commerce_customer_billing->commerce_customer_address->value();
+        if (!empty($field_address)) {
+          $address = $field_address;
+        }
+      }
+    }
+  }
+
+  return $address;
+
+}
+
+/**
+ * Returns Recipient's addressfield based on the given order
+ * Processes for DPD API requests.
+ *
+ * @param object $order
+ *    The fully loaded $order object.
+ * @return array $addressfield
+ *    An addressfield array.
+ */
+function commerce_dpd_order_recipient_addressfield($order) {
+  $address = array();
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  // Try shipping first.
+  if (isset($order_wrapper->commerce_customer_shipping)) {
+    if (isset($order_wrapper->commerce_customer_shipping->commerce_customer_address)) {
+      $field_address = $order_wrapper->commerce_customer_shipping->commerce_customer_address->value();
+      if (!empty($field_address)) {
+        $address = $field_address;
+      }
+    }
+  }
+
+  // Fallback to billing.
+  if (empty($address)) {
+    if (isset($order_wrapper->commerce_customer_billing)) {
+      if (isset($order_wrapper->commerce_customer_billing->commerce_customer_address)) {
+        $field_address = $order_wrapper->commerce_customer_billing->commerce_customer_address->value();
+        if (!empty($field_address)) {
+          $address = $field_address;
+        }
+      }
+    }
+  }
+
+  // Add E-Mail Address before returning.
+  $address['mail'] = $order_wrapper->mail->value();
+
+  return commerce_dpd_build_correct_address($address);
+
+}
+
+/**
+ * Build the correct address for DPD
+ *
+ * @param array $address
+ *    An address array of an order.
+ * @return array $dpd['ship_address']
+ *    An corrected address field array.
+ */
+function commerce_dpd_build_correct_address($address) {
+
+  if ($address['thoroughfare']) {
+    $address['street'] = _commerce_dpd_extract_numbers($address['thoroughfare']);
+    $address['house_number'] = _commerce_dpd_extract_text($address['thoroughfare']);
+  }
+
+  $dpd = array(
+    'ship_address' => array(
+      'Company' => $address['organisation_name'],
+      'Salutation' => '',
+      'Name' => $address['name_line'],
+      'Street' => $address['street'],
+      'HouseNo' => $address['house_number'],
+      'Country' => $address['country'],
+      'ZipCode' => $address['postal_code'],
+      'City' => $address['locality'],
+      'State' => '',
+      'Phone' => '',
+      'Mail' => $address['mail'],
+    ),
+  );
+
+  return $dpd['ship_address'];
+
+}
+
+/**
+ * Helper function to remove numbers from the street
+ *
+ * @param string $street
+ *    The street of the commerce order shipping address.
+ * @return string $cleaned_street
+ *    String of the cleaned Street.
+ */
+function _commerce_dpd_extract_numbers($street) {
+  $cleaned_street = trim(str_replace(range(0, 9), '', $street));
+  return $cleaned_street;
+}
+
+/**
+ * Helper function to extract numbers from the street
+ *
+ * @param string $street
+ *    The street of the commerce order shipping address.
+ * @return string $output
+ *    String of representing the house number of the street.
+ */
+function _commerce_dpd_extract_text($street) {
+  preg_match("|\d+|", $street, $output);
+  return end($output);
+}
+
+/**
+ * Check if the DPD Cloud API is working
+ *
+ * @return bool $access
+ *    TRUE or FALSE for access.
+ */
+function commerce_dpd_check_api() {
+
+  $access = TRUE;
+
+  $dpd = commerce_dpd_rest_api();
+  $dpd_message = $dpd->getZipCodeRules();
+  if (isset($dpd_message->Message) && $dpd_message->Message == TRUE) {
+    $access = FALSE;
+  }
+
+  return $access;
+
+}
+
+/**
+ * Return available countries for DPD Shipping Methods
+ *
+ * @return array $available_countries
+ *    Return available countries.
+ */
+function commerce_dpd_country_get_list() {
+  include_once DRUPAL_ROOT . '/includes/locale.inc';
+  $countries = country_get_list();
+
+  $available_codes = array(
+    "FR",
+    "ES",
+    "NL",
+    "BE",
+    "LU",
+    "BG",
+    "CZ",
+    "DK",
+    "EE",
+    "IE",
+    "EL",
+    "HR",
+    "IT",
+    "CY",
+    "LV",
+    "LT",
+    "HU",
+    "MT",
+    "AT",
+    "PL",
+    "PT",
+    "RO",
+    "SI",
+    "SK",
+    "FI",
+    "SE",
+    "UK",
+    "DE",
+  );
+
+  // Sort the Codes in alphabetical order
+  asort($available_codes);
+  $available_countries = array();
+  foreach ($available_codes as $code) {
+    if (isset($countries[$code])) {
+      $available_countries[$code] = $countries[$code];
+    }
+  }
+
+  return $available_countries;
+
+}
+
+/**
+ * Get Default Country Codes for
+ * DPD shipping methods
+ *
+ * @return array
+ *    Array for default countries.
+ */
+function commerce_dpd_ship_from_defaults() {
+  return array('BE', 'DE', 'NL', 'LU');
+}
+
+/**
+ * Access callback for Label admin page
+ * @param $order
+ *    The fully loaded $order object.
+ * @return bool
+ *    TRUE or FALSE for access.
+ */
+function commerce_dpd_label_admin_page_access($order) {
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  $dpd_shipment_object = $order_wrapper->dpd_shipment_object->value();
+
+  if (is_object($dpd_shipment_object) && !empty($dpd_shipment_object)) {
+    $dpd = commerce_dpd_check_shipping_method($dpd_shipment_object->shipping_method);
+  }
+  else {
+    $dpd = FALSE;
+  }
+
+  if (!user_access('administer dpd services') || $dpd == FALSE) {
+    return FALSE;
+  }
+
+  return TRUE;
+
+}
+
+/**
+ * View for /admin/dpd-label/<label_id> page.
+ */
+function commerce_dpd_label_view_entity($commerce_dpd_label) {
+  $output = entity_view('commerce_dpd_label', array($commerce_dpd_label), 'administrator');
+  return $output;
+}
+
+/**
+ * Helper function for custom queries.
+ */
+function commerce_dpd_label_entity_query($conditions = array()) {
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'commerce_dpd_label');
+
+  // Apply conditions.
+  foreach ($conditions as $key => $value) {
+    $query->propertyCondition($key, $value);
+  }
+
+  $result = $query->execute();
+
+  if (isset($result['commerce_dpd_label'])) {
+    $commerce_dpd_label = array_keys($result['commerce_dpd_label']);
+  }
+  else {
+    $commerce_dpd_label = array();
+  }
+
+  return $commerce_dpd_label;
+}
+
+/**
+ * DPD Label access callback.
+ */
+function commerce_dpd_label_access_callback() {
+  if (user_is_anonymous() && !user_access('administer dpd label entities')) {
+    return FALSE;
+  }
+  else {
+    return TRUE;
+  }
+}
+
+/**
+ * Saves DPD label to database.
+ */
+function commerce_dpd_label_save(commerce_dpd_label $commerce_dpd_label) {
+  return $commerce_dpd_label->save();
+}
+
+/**
+ * Menu autoloader for /commerce_dpd_label.
+ */
+function commerce_dpd_label_load($id, $reset = FALSE) {
+  $commerce_dpd_label = commerce_dpd_label_load_multiple(array($id), array(), $reset);
+  return reset($commerce_dpd_label);
+}
+
+/**
+ * Load multiple commerce_dpd_label based on certain conditions.
+ */
+function commerce_dpd_label_load_multiple($ids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('commerce_dpd_label', $ids, $conditions, $reset);
+}
+
+/**
+ * Deletes a commerce_dpd_label.
+ */
+function commerce_dpd_label_delete(commerce_dpd_label $commerce_dpd_label) {
+  $commerce_dpd_label->delete();
+}
+
+/**
+ * Delete multiple commerce_dpd_label.
+ */
+function commerce_dpd_label_delete_multiple(array $ids) {
+  entity_get_controller('commerce_dpd_label')->delete($ids);
+}
+
+/**
+ * Implements hook_field_display_alter()
+ */
+function commerce_dpd_field_display_alter(&$display, $context) {
+  // Leave field labels out of the search index.
+  // Note: The check against $context['entity_type'] == 'node' could be avoided
+  // by using hook_field_display_node_alter() instead of
+  // hook_field_display_alter(), resulting in less function calls when
+  // rendering non-node entities.
+  if ($context['entity_type'] == 'commerce_dpd_label' && $context['view_mode'] == 'administrator') {
+    $display['label'] = 'hidden';
+  }
+}
+
+/**
+ * Helper function to get Label Size Options
+ */
+function _commerce_dpd_label_size_options() {
+  return array(
+    'PDF_A4' => 'PDF_A4',
+    'PDF_A6' => 'PDF_A6',
+  );
+}
+
+/**
+ * Helper function to get Label Start Position Options
+ */
+function _commerce_dpd_label_start_position_options() {
+  return array(
+    'UpperLeft' => 'UpperLeft',
+    'UpperRight' => 'UpperRight',
+    'LowerLeft' => 'LowerLeft',
+    'LowerRight' => 'LowerRight',
+  );
+}
+
+/**
+ * Load tracking objects by conditions
+ *
+ * @param array $conditions
+ *  List of conditions in form column => value
+ *
+ * @return array
+ *  List of parcel objects
+ */
+function commerce_dpd_parcel_load($conditions = NULL) {
+  $query = db_select('commerce_dpd_parcel_life_cycle', 'c')
+    ->fields('c', array('id', 'order_id', 'parcel_number'));
+
+  if (!empty($conditions)) {
+    foreach ($conditions as $column => $value) {
+      $query->condition($column, $value);
+    }
+  }
+
+  $results = $query->execute()->fetchAll();
+  $cache = array();
+  foreach ($results as $result) {
+    $cache[$result->order_id] = $result;
+  }
+
+  return $results;
+}
+
+/**
+ * This function takes an order and settings to
+ * return a path to the created label entity
+ * @param object $order
+ *   The full $order object
+ * @param array $settings
+ *   The full $settings object
+ * @param string $create_label_type
+ *   Single or multiple orders label type.
+ * @return bool string
+ *   FALSE or the path to the created Label Entity
+ */
+function commerce_dpd_label_create_label($order, $settings, $create_label_type = 'single') {
+  $commerce_dpd_label_create = FALSE;
+  $order_response = commerce_dpd_rest_api_set_order($order, $settings);
+  if ($order_response) {
+    $pdf_file = base64_decode($order_response->LabelResponse->LabelPDF);
+    $pdf_file_name = 'dpd_label_' . $order->order_number . '.pdf';
+    $parcel_objects = commerce_dpd_parcel_load(array('order_id' => $order->order_id));
+    if (empty($parcel_objects)) {
+      $file = file_save_data($pdf_file, 'private://' . $pdf_file_name, FILE_EXISTS_REPLACE);
+      if ($file) {
+
+        $parcel_number = $order_response->LabelResponse->LabelDataList[0]->ParcelNo;
+        $order_id = $order_response->LabelResponse->LabelDataList[0]->YourInternalID;
+        $record = new stdClass;
+        $record->order_id = $order_id;
+        $record->parcel_number = $parcel_number;
+        commerce_dpd_parcel_write_record($record);
+
+        // Create Commerce DPD Label Entity:
+        $entity_type = 'commerce_dpd_label';
+        $entity = entity_create($entity_type, array('type' => 'commerce_dpd_label'));
+        $label_wrapper = entity_metadata_wrapper($entity_type, $entity);
+        $label_title = t('DPD Label for Order number') . ' ' . $order->order_number;
+        $label_wrapper->title->set($label_title);
+        $label_description = t('DPD Label with the following Parcel Number') . ' ' . $parcel_number;
+        $label_wrapper->description->set($label_description);
+        $label_wrapper->commerce_dpd_label_pdf->file->set($file);
+
+        // Prepare Reference:
+        $reference = array($order->order_number);
+
+        $label_wrapper->commerce_dpd_label_ref->set($reference);
+        $label_wrapper->save();
+
+        // Label file creation message:
+        drupal_set_message(t('DPD Label for Order number !order_number  with the following Parcel Number !parcel_number created.', array(
+          '!order_number' => $order->order_number,
+          '!parcel_number' => $parcel_number
+        )));
+
+        if ($create_label_type == 'single') {
+          $commerce_dpd_label_create = COMMERCE_DPD_LABEL_ENTITY_PATH . $label_wrapper->getIdentifier();
+        }
+        elseif ($create_label_type == 'multiple') {
+          $commerce_dpd_label_create = $file;
+        }
+        else {
+          $commerce_dpd_label_create = FALSE;
+        }
+      }
+      else {
+        // Error creating file.
+        drupal_set_message(t('DPD Label file could not be created.'), 'error');
+      }
+    }
+    else {
+      // Existing label.
+      drupal_set_message(t('DPD Label already created for that order!'));
+      $commerce_dpd_label_create = FALSE;
+    }
+  }
+  else {
+    // DPD setOrder method failure.
+    drupal_set_message(t('DPD order label could not be generated because of errors.'), 'error');
+  }
+
+  return $commerce_dpd_label_create;
+}
+
+/**
+ * Implementation of hook_action_info().
+ */
+function commerce_dpd_action_info() {
+
+  if (commerce_dpd_get_library('tcpdf') && commerce_dpd_get_library('fpdi')) {
+    if (_commerce_dpd_include_pdf_concat_class() != FALSE) {
+      $action = array(
+        'commerce_dpd_label_bulk_print' => array(
+          'label' => t('Bulk Label Print for DPD orders'),
+          'type' => 'entity',
+          'aggregate' => TRUE,
+          'configurable' => FALSE,
+          'vbo_configurable' => TRUE,
+          'triggers' => array('any'),
+        ),
+      );
+
+      return $action;
+
+    }
+  }
+}
+
+/**
+ * Action function for commerce_dpd_bulk_print.
+ */
+function commerce_dpd_label_bulk_print(&$entities, $context = array()) {
+
+  $ship_date = $context['values']['dd'] . '.' . $context['values']['mm'] . '.' . $context['values']['yyyy'];
+
+  $settings = array(
+    'ShipDate' => date('m.d.Y', strtotime($ship_date)),
+    'LabelSize' => $context['values']['label_size'],
+    'LabelStartPosition' => $context['values']['label_position'],
+  );
+
+  foreach ($entities as $entity) {
+    $commerce_dpd_label_create = commerce_dpd_label_create_label($entity, $settings, 'multiple');
+    if ($commerce_dpd_label_create == FALSE) {
+      drupal_set_message(t('Label already created for Commerce Order' . ' ' . $entity->order_number));
+    }
+    else {
+      $pdf_file_array[] = _commerce_dpd_label_get_localpath_by_uri($commerce_dpd_label_create->uri);
+    }
+  }
+
+  if ($pdf_file_array) {
+    $path = commerce_dpd_label_create_multiple($pdf_file_array);
+    drupal_goto($path);
+  }
+
+}
+
+/**
+ * Create multiple Labels.
+ *
+ * @param array $files
+ *    Array of file paths
+ * @return boolean or string of path
+ *    Returns FALSE or Entity Path to created Label
+ */
+function commerce_dpd_label_create_multiple($files) {
+
+  $rand = rand(12, 12);
+  $pdf_file_name = 'dpd_bulk_printed_label' . $rand . '.pdf';
+
+  // Load the needed pdf concat class:
+  $pdf_concat = _commerce_dpd_include_pdf_concat_class();
+
+  if ($pdf_concat) {
+    include_once $pdf_concat;
+    $pdf = new CommerceDpd_concat_pdf();
+    $pdf->setFiles($files);
+    $pdf->concat();
+    $pdf_file_merged = $pdf->Output('sites/default/files/temp.pdf', "S");
+
+    // Create Commerce DPD Label Entity:
+    $entity_type = 'commerce_dpd_label';
+    $entity = entity_create($entity_type, array('type' => 'commerce_dpd_label'));
+    $label_wrapper = entity_metadata_wrapper($entity_type, $entity);
+    $label_title = t('DPD Bulk Printed Label');
+    $label_wrapper->title->set($label_title);
+    $label_description = t('DPD Bulk Printed Label');
+    $label_wrapper->description->set($label_description);
+    $file = file_save_data($pdf_file_merged, 'private://' . $pdf_file_name, FILE_EXISTS_RENAME);
+    $label_wrapper->commerce_dpd_label_pdf->file->set($file);
+    $label_wrapper->save();
+
+    return COMMERCE_DPD_LABEL_ENTITY_PATH . $label_wrapper->getIdentifier();
+  }
+  else {
+    drupal_set_message(t('There was a problem loading PDF Concat Class!'), 'warning');
+  }
+
+}
+
+/**
+ * Helper function to access file path from uri.
+ *
+ * @param string $uri
+ *    The file uri of a stream wrapper
+ * @return string $path
+ *    The accessible file path
+ */
+function _commerce_dpd_label_get_localpath_by_uri($uri) {
+  $wrapper = file_stream_wrapper_get_instance_by_uri($uri);
+  $path = $wrapper->getDirectoryPath() . "/" . file_uri_target($uri);
+  return $path;
+}
+
+/**
+ * Validation handler for commerce_dpd_bulk_print.
+ */
+function commerce_dpd_label_bulk_print_validate($form, $form_state) {
+
+  $values = $form_state['values'];
+
+  if (!empty($values['dd']) || !empty($values['mm']) || !empty($values['yyyy'])) {
+
+    if (strlen($values['dd']) < 2) {
+      form_set_error('dd');
+      form_set_error('ship_date', t('Date not valid!'));
+    }
+
+    if (strlen($values['mm']) < 2) {
+      form_set_error('mm');
+      form_set_error('ship_date', t('Date not valid!'));
+    }
+
+    if (strlen($values['yyyy']) < 4) {
+      form_set_error('yyyy');
+      form_set_error('ship_date', t('Date not valid!'));
+    }
+
+    if (checkdate($values['mm'], $values['dd'], $values['yyyy'])) {
+
+      $ship_date = $values['dd'] . '.' . $values['mm'] . '.' . $values['yyyy'];
+      if (strtotime($ship_date) < strtotime(date('d.m.Y'))) {
+        form_set_error('ship_date', t('Given date is smaller than today!'));
+      }
+      // DPD ZipCodeRules NoPickupDays validation.
+      $no_pickup_days = commerce_dpd_rest_api_zip_code_rules_no_pickup_days();
+      if (is_array($no_pickup_days) && in_array($ship_date, $no_pickup_days)) {
+        form_set_error('ship_date', t('No parcel pick-up is possible on this date. Please try another ship date.'));
+      }
+
+    }
+    else {
+      form_set_error('mm');
+      form_set_error('dd');
+      form_set_error('yyyy');
+      form_set_error('ship_date', t('Date not valid!'));
+    }
+  }
+}
+
+/**
+ * Form for commerce_dpd_bulk_print.
+ */
+function commerce_dpd_label_bulk_print_form($settings, &$form_state) {
+  $default_values = commerce_dpd_settings(array());
+  $form['#attached']['css'][] = drupal_get_path('module', 'commerce_dpd') . '/theme/css/form.css';
+  $form['ship_date'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Ship date'),
+    '#attributes' => array('class' => array('commerce-dpd-label-ship-date clearfix')),
+  );
+
+  $form['ship_date']['dd'] = array(
+    '#title' => 'DD',
+    '#type' => 'textfield',
+    '#attributes' => array('placeholder' => t('DD')),
+    '#size' => '2',
+    '#maxlength' => 2,
+    '#required' => TRUE,
+    '#default_value' => _commerce_dpd_label_get_default_day(),
+  );
+
+  $form['ship_date']['mm'] = array(
+    '#title' => 'MM',
+    '#type' => 'textfield',
+    '#attributes' => array('placeholder' => t('MM')),
+    '#size' => '2',
+    '#maxlength' => 2,
+    '#required' => TRUE,
+    '#default_value' => _commerce_dpd_label_get_default_month(),
+  );
+
+  $form['ship_date']['yyyy'] = array(
+    '#title' => 'YYYY',
+    '#type' => 'textfield',
+    '#attributes' => array('placeholder' => t('YYYY')),
+    '#size' => '4',
+    '#maxlength' => 4,
+    '#required' => TRUE,
+    '#default_value' => _commerce_dpd_label_get_default_year(),
+  );
+
+  $no_pickup_days = commerce_dpd_rest_api_zip_code_rules_no_pickup_days();
+  foreach ($no_pickup_days as $no_pickup_day) {
+    if (strtotime($no_pickup_day) > strtotime(date('d.m.Y'))) {
+      $future_no_pickup_days[] = $no_pickup_day;
+    }
+  }
+  if (!empty($future_no_pickup_days)) {
+    $no_pickup_days_markup = t('There are no parcel pick-up days') . ':';
+    $no_pickup_days_markup .= theme('item_list', array('items' => $future_no_pickup_days));
+    $no_pickup_days_markup .= t('Please use other ship dates.');
+    $form['ship_date']['no_pickup_days'] = array(
+      '#type' => 'item',
+      '#markup' => $no_pickup_days_markup,
+    );
+  }
+
+  $form['label_settings'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Label format settings'),
+    '#collapsed' => TRUE,
+    '#collapsible' => TRUE,
+  );
+
+  $form['label_settings']['label_size'] = array(
+    '#type' => 'select',
+    '#options' => _commerce_dpd_label_size_options(),
+    '#title' => t('Select Label Format'),
+    '#description' => t('Choose your preferred Label format.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['label_size']) ? $default_values['label_size'] : '',
+  );
+
+  $form['label_settings']['label_position'] = array(
+    '#type' => 'select',
+    '#options' => _commerce_dpd_label_start_position_options(),
+    '#title' => t('Select Label Position'),
+    '#description' => t('Choose your preferred Label position.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['label_position']) ? $default_values['label_position'] : '',
+    '#states' => array(
+      'visible' => array(   // action to take.
+        ':input[name=label_size]' => array('value' => 'PDF_A4'),
+      ),
+    ),
+  );
+
+  return $form;
+}
+
+/**
+ * Submit handler for commerce_dpd_bulk_print.
+ */
+function commerce_dpd_label_bulk_print_submit($form, $form_state) {
+  $return = array();
+  $return['values'] = $form_state['values'];
+  return $return;
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function commerce_dpd_entity_info() {
+  $entity_info[COMMERCE_DPD_LABEL_ENTITY] = array(
+    'label' => t('DPD Label'),
+    'label callback' => 'commerce_dpd_label_label_callback',
+    'entity class' => 'CommerceDpdLabel',
+    'controller class' => 'CommerceDpdLabelController',
+    'base table' => 'commerce_dpd_label',
+    'uri callback' => 'commerce_dpd_uri',
+    'fieldable' => TRUE,
+    'entity keys' => array(
+      'id' => 'id',
+    ),
+    'uri callback' => 'entity_class_uri',
+    'load hook' => 'commerce_dpd_label_load',
+    'view modes' => array(
+      'administrator' => array(
+        'label' => t('Administrator'),
+        'custom settings' => TRUE,
+      ),
+    ),
+    'static cache' => TRUE,
+    'module' => 'commerce_dpd',
+    'access callback' => 'commerce_dpd_label_access_callback',
+    'bundles' => array(
+      COMMERCE_DPD_LABEL_BUNDLE => array(
+        'label' => 'DPD Label',
+      ),
+    ),
+    'views controller class' => 'EntityDefaultViewsController',
+  );
+
+  return $entity_info;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function commerce_dpd_theme() {
+  $path = drupal_get_path('module', 'commerce_dpd') . '/theme';
+
+  return array(
+    'commerce_dpd_parcel_life_cycle_results' => array(
+      'variables' => array(
+        'parcel_number' => NULL,
+        'service_label' => NULL,
+        'service_value' => NULL,
+        'states' => array(),
+      ),
+      'path' => $path,
+      'file' => 'commerce_dpd_parcel_life_cycle.theme.inc',
+      'template' => 'commerce-dpd-parcel-life-cycle-results',
+    ),
+  );
+}
+
+/**
+ * Access callback for order admin page
+ */
+function commerce_dpd_parcel_life_cycle_admin_page_access($order) {
+
+  $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+  $dpd_shipment_object = $order_wrapper->dpd_shipment_object->value();
+
+  if (is_object($dpd_shipment_object) && !empty($dpd_shipment_object)) {
+    $dpd = commerce_dpd_check_shipping_method($dpd_shipment_object->shipping_method);
+  }
+  else {
+    $dpd = FALSE;
+  }
+
+  if (!user_access('administer dpd parcel life cycle') || $dpd == FALSE) {
+    return FALSE;
+  }
+
+  return TRUE;
+
+}
+
+/**
+ * Retrieve the service Label from DPD Parcel Life Cycle Response.
+ * @param object response
+ *    The response object.
+ * @return string label
+ *    The Label.
+ */
+function commerce_dpd_parcel_life_cycle_shipment_service_label($response) {
+  $parcel_life_cycle_data = $response->ParcelLifeCycleData;
+  $shipment_info_field = $parcel_life_cycle_data->shipmentInfoField->serviceDescriptionField;
+  $shipment_service_label = $shipment_info_field->labelField->contentField;
+  return $shipment_service_label;
+}
+
+/**
+ * Retrieve the service Value from DPD Parcel Life Cycle Response.
+ *
+ * @param object response
+ *    Get the object response.
+ * @return string value
+ *    Returns the string value of the service.
+ */
+function commerce_dpd_parcel_life_cycle_shipment_service_value($response) {
+  $parcel_life_cycle_data = $response->ParcelLifeCycleData;
+  $shipment_info_field = $parcel_life_cycle_data->shipmentInfoField->serviceDescriptionField;
+  $shipment_service_value = $shipment_info_field->contentField[0]->contentField;
+  return $shipment_service_value;
+}
+
+/**
+ * Retrieve the shipment states from DPD Parcel Life Cycle Response.
+ *
+ * @param object response
+ *    Get the response object.
+ * @return array $states
+ *    Returns an array of states.
+ */
+function commerce_dpd_parcel_life_cycle_shipment_states($response) {
+  $shipment_states = $response->ParcelLifeCycleData->statusInfoField;
+  $i = 0;
+
+  foreach ($shipment_states as $shipment_state) {
+    $states[] = array(
+      $shipment_state->labelField->contentField => $shipment_state->descriptionField->contentField[0]->contentField,
+    );
+    $i++;
+  }
+
+  return $states;
+}
+
+/**
+ * Metatdata getter callback: orders
+ */
+function commerce_dpd_parcel_life_cycle_order_property_getter($order, array $options, $name) {
+  $wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  switch ($name) {
+    case 'dpd_parcel_life_cycle_object':
+      $parcel_objects = commerce_dpd_parcel_load(array('order_id' => $order->order_id));
+      if (!empty($parcel_objects)) {
+        return reset($parcel_objects);
+      }
+      break;
+    case 'parcel_number':
+      $parcel_object = $wrapper->dpd_parcel_life_cycle_object->value();
+      if (!empty($parcel_object->parcel_number)) {
+        return $parcel_object->parcel_number;
+      }
+      break;
+  }
+}
+
+/**
+ * Write a parcel object record to the database.
+ *
+ * @param object $parcel_object
+ *    Get the parcel object
+ */
+function commerce_dpd_parcel_write_record($parcel_object) {
+  if (!empty($parcel_object->id)) {
+    drupal_write_record('commerce_dpd_parcel_life_cycle', $parcel_object, 'id');
+  }
+  else {
+    drupal_write_record('commerce_dpd_parcel_life_cycle', $parcel_object);
+  }
+}
+
+/**
+ * This function returns the path to a given library.
+ *
+ * @param string $name
+ *    Name of the Library.
+ * @return string $path
+ *    Returns the path of the library.
+ */
+function commerce_dpd_get_library($name) {
+  if (function_exists('libraries_get_path')) {
+    return libraries_get_path($name);
+  }
+  else {
+    return 'sites/all/libraries/' . $name;
+  }
+}
+
+/**
+ * Get the PDF Concat class.
+ */
+function _commerce_dpd_include_pdf_concat_class() {
+  $file = drupal_get_path('module', 'commerce_dpd') . '/includes/pdf/pdf_concat.inc';
+  if (file_exists($file)) {
+    return $file;
+  }
+  return FALSE;
+}
+
+/**
+ * Get the 2 digit Day for actual day.
+ */
+function _commerce_dpd_label_get_default_day() {
+  $today = getdate();
+  $today_formatted = sprintf("%02s", $today['mday']);
+  return $today_formatted;
+}
+
+/**
+ * Get the 2 digit Month for actual day.
+ */
+function _commerce_dpd_label_get_default_month() {
+  $today = getdate();
+  $today_formatted = sprintf("%02s", $today['mon']);
+  return $today_formatted;
+}
+
+/**
+ * Get the 4 digit Year for actual day.
+ */
+function _commerce_dpd_label_get_default_year() {
+  $today = getdate();
+  $today_formatted = sprintf("%04s", $today['year']);
+  return $today_formatted;
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ * Add DPD Parcel Life Cycle reference on order view.
+ */
+function commerce_dpd_field_extra_fields() {
+  return array(
+    'commerce_order' => array(
+      'commerce_order' => array(
+        'form' => array(
+          'commerce_dpd_parcel_life_cycle' => array(
+            'label' => t('DPD Parcel Life Cycle'),
+            'description' => t('DPD Parcel Life Cycle referenced on the order'),
+            'weight' => 10,
+          ),
+        ),
+        'display' => array(
+          'commerce_dpd_parcel_life_cycle' => array(
+            'label' => t('DPD Parcel Life Cycle'),
+            'description' => t('DPD Parcel Life Cycle referenced on the order'),
+            'weight' => 99,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_attach_view_alter().
+ */
+function commerce_dpd_field_attach_view_alter(&$output, $context) {
+  if (!isset($context['entity_type']) || !isset($context['entity'])) {
+    return NULL;
+  }
+
+  $entity = $context['entity'];
+
+  // Add DPD Shop for orders not rendered in a view
+  if ($context['entity_type'] == 'commerce_order' && isset($context['view_mode']) && $context['view_mode'] != '_custom') {
+    $entity_wrapper = entity_metadata_wrapper($context['entity_type'], $entity);
+    $extra_fields_info = field_info_extra_fields($context['entity_type'], $entity_wrapper->getBundle(), 'display');
+
+    $parcel_life_cycle_object = $entity_wrapper->dpd_parcel_life_cycle_object->value();
+
+    if (!empty($parcel_life_cycle_object)) {
+      $field_label = isset($extra_fields_info['commerce_dpd_parcel_life_cycle']['label']) ?
+        $extra_fields_info['commerce_dpd_parcel_life_cycle']['label'] : t('DPD Parcel Life Cycle');
+
+      if (!empty($parcel_life_cycle_object)) {
+        $parcel_number = $parcel_life_cycle_object->parcel_number;
+        $parcel_object = commerce_dpd_rest_api_parcel_tracking_data($parcel_number);
+
+        if ($parcel_object) {
+          $service_label = commerce_dpd_parcel_life_cycle_shipment_service_label($parcel_object);
+          $service_value = commerce_dpd_parcel_life_cycle_shipment_service_value($parcel_object);
+          $states = commerce_dpd_parcel_life_cycle_shipment_states($parcel_object);
+
+          $output['commerce_dpd_parcel_life_cycle_object'] = array(
+            '#prefix' => '<div class="commerce-dpd-parcel-life-cycle-object">',
+            '#suffix' => '</div>',
+            '#type' => 'fieldset',
+            '#collapsible' => FALSE,
+            '#field_type' => 'commerce_dpd_parcel_life_cycle_object_extra_field',
+            '#field_name' => 'commerce_dpd_parcel_life_cycle_object_extra_field',
+            '#view_mode' => $context['view_mode'],
+            '#title' => check_plain($field_label),
+            '#attributes' => array('class' => array('commerce-dpd-parcel-life-cycle-object-order')),
+            0 => array(
+              '#weight' => -1,
+              '#markup' => theme(
+                'commerce_dpd_parcel_life_cycle_results', array(
+                  'parcel_number' => $parcel_number,
+                  'service_label' => $service_label,
+                  'service_value' => $service_value,
+                  'states' => $states,
+                )
+              ),
+            ),
+          );
+
+        }
+      }
+    }
+  }
+}

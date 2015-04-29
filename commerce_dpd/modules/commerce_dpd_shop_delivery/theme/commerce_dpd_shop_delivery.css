@@ -1,0 +1,25 @@
+/** Checkout service details selection form **/
+.dpd-shop-detail-line {
+    display: block;
+}
+
+.commerce-dpd-shop-delivery-service-details-form {
+    clear: both;
+    padding-top: 1px;
+}
+
+.commerce-dpd-shop-delivery-custom-address .form-item {
+    float: left;
+}
+
+.commerce-dpd-shop-delivery-custom-address .form-submit {
+    margin-top: 34px;
+}
+
+.commerce-dpd-shop-delivery-shop-option input[type="radio"]:checked {
+    display: none;
+}
+
+.commerce-dpd-shop-delivery-shop-timetable {
+    margin-top: 20px;
+}
