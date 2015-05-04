@@ -119,35 +119,28 @@ function commerce_dpd_shop_delivery_map_select_valid_token($token, $skip_anonymo
  *   Returns TRUE if user has access to it or FALSE if not
  */
 function commerce_dpd_shop_delivery_map_select_access($order, $shipping_service) {
-	
-	var_dump('start');
 
   global $user;
 	
   if (!isset($_GET['token']) || !drupal_valid_token($_GET['token'], 'commerce_dpd_shop_delivery/map-select/' . $order->order_id . '/' . $shipping_service['name'])) {
-		var_dump('not allowed');
 		return FALSE;
   }
 
   // DENY if not a DPD shipping method
   if ($shipping_service['shipping_method'] != 'dpd_shop_delivery') {
-		var_dump('not allowed');
     return FALSE;
   }
 
   // ALLOW owner access if order is cart and can access checkout
   if ($user->uid == $order->uid && commerce_cart_order_is_cart($order) && user_access('access checkout')) {
-    var_dump('allowed');
 		return TRUE;
   }
 
   // ALLOW admin access
   if (commerce_order_access('update', $order)) {
-		var_dump('allowed 2');
     return TRUE;
   }
 	
-	var_dump('ran out');
   return FALSE;
 
 }
@@ -231,7 +224,7 @@ function commerce_dpd_shop_delivery_form_commerce_checkout_form_shipping_alter(&
   $shipping_service = 'dpd_shop_delivery';
 
   if (isset($form_state['values']['commerce_shipping']['shipping_service']) && $form_state['values']
-    ['commerce_shipping']['shipping_service'] == $shipping_service || $form['commerce_shipping']['shipping_service']['#default_value'] === 'dpd_parcelshop'
+    ['commerce_shipping']['shipping_service'] == $shipping_service || $form['commerce_shipping']['shipping_service']['#default_value'] === 'dpd_shop_delivery'
   ) {
     $form['commerce_shipping']['service_details']['dpd_shop'] = array(
       '#type' => 'fieldset',
