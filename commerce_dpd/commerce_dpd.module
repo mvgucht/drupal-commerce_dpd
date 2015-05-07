@@ -454,7 +454,9 @@ function commerce_dpd_rest_api($language = 'en_EN') {
     $dpd_api_settings = commerce_dpd_settings(array());
     $delisID = $dpd_api_settings['delisID'];
     $password = $dpd_api_settings['password'];
-    $dpd_soap_api['language'] = new DPD_Core_SOAP($delisID, $password, $language, false);
+		$server = $dpd_api_settings['stage_live_option'] == 'live';
+		$timeLogging = $dpd_api_settings['time_logging_option'] == 'on';
+    $dpd_soap_api['language'] = new DPD_Core_SOAP($delisID, $password, $language, $server, $timeLogging);
   }
 
   return $dpd_soap_api['language'];
@@ -609,15 +611,7 @@ function commerce_dpd_rest_api_parcel_tracking_data($parcel_no) {
  * Returns an array of dates with no pick-up parcels.
  */
 function commerce_dpd_rest_api_zip_code_rules_no_pickup_days() {
-  // Get DPD ZipCodeRules response.
-  $dpd_zip_code_rules = commerce_dpd_rest_api_zip_code_rules();
-  if ($dpd_zip_code_rules) {
-    $no_pickup_days = explode(',', $dpd_zip_code_rules->ZipCodeRules->NoPickupDays);
-    return $no_pickup_days;
-  }
-  else {
-    return FALSE;
-  }
+  return array(); //date("dd.MM.yyyy"));
 }
 
 /**
@@ -723,16 +717,24 @@ function commerce_dpd_rest_api_set_order_data_mapping($order) {
   if ($dpd_shipping_method == 'dpd_classic_predict') {
     $dpd_ship_service = 'Classic_Predict';
   }
-
-  $order_data['ship_address'] = commerce_dpd_order_recipient_addressfield($order);
+	
+	$order_data['ShipperAddress']['Company'] = $dpd_settings['Name1'];
+	$order_data['ShipperAddress']['Name'] = $dpd_settings['Name2'];
+	$order_data['ShipperAddress']['Street'] = $dpd_settings['Street'];
+	$order_data['ShipperAddress']['HouseNo'] = $dpd_settings['HouseNo'];
+	$order_data['ShipperAddress']['Country'] = $dpd_settings['Country'];
+	$order_data['ShipperAddress']['ZipCode'] = $dpd_settings['ZipCode'];
+	$order_data['ShipperAddress']['City'] = $dpd_settings['City'];
+  
+	$order_data['ConsigneeAddress'] = commerce_dpd_order_recipient_addressfield($order);
   // Token replace for extra ship address data.
-  $order_data['ship_address']['Salutation'] = token_replace($dpd_settings['salutation'], array('commerce-order' => $order));
-  $order_data['parcel_data']['ShipService'] = $dpd_ship_service;
-  $order_data['parcel_data']['Weight'] = token_replace($dpd_settings['weight'], array('commerce-order' => $order));
-  $order_data['parcel_data']['Content'] = token_replace($dpd_settings['content'], array('commerce-order' => $order));
-  $order_data['parcel_data']['YourInternalID'] = $order->order_number;
-  $order_data['parcel_data']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));
-  $order_data['parcel_data']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));;
+  $order_data['ParcelData']['Salutation'] = token_replace($dpd_settings['salutation'], array('commerce-order' => $order));
+  $order_data['ParcelData']['ShipService'] = $dpd_ship_service;
+  $order_data['ParcelData']['Weight'] = token_replace($dpd_settings['weight'], array('commerce-order' => $order));
+  $order_data['ParcelData']['Content'] = token_replace($dpd_settings['content'], array('commerce-order' => $order));
+  $order_data['ParcelData']['YourInternalID'] = $order->order_number;
+  $order_data['ParcelData']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));
+  $order_data['ParcelData']['Reference2'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));;
 
   if (!empty($shop_id)) {
     $order_data['parcel_shop_id'] = $shop_id;
@@ -1242,7 +1244,7 @@ function commerce_dpd_label_create_label($order, $settings, $create_label_type =
   $commerce_dpd_label_create = FALSE;
   $order_response = commerce_dpd_rest_api_set_order($order, $settings);
   if ($order_response) {
-    $pdf_file = base64_decode($order_response->LabelResponse->LabelPDF);
+    $pdf_file = $order_response->LabelResponse->LabelPDF;
     $pdf_file_name = 'dpd_label_' . $order->order_number . '.pdf';
     $parcel_objects = commerce_dpd_parcel_load(array('order_id' => $order->order_id));
     if (empty($parcel_objects)) {

@@ -167,17 +167,14 @@ function commerce_dpd_shop_delivery_process_map_select($order, $shipping_service
   $shop_id = NULL;
   $shop_lat = NULL;
   $shop_lon = NULL;
-	var_dump('select start');
   if (!empty($params['shop_id']) && !empty($params['shop_lon']) && !empty($params['shop_lat'])) {
     $shop_id_param = intval($params['shop_id']);
     $shop_lon_param = floatval($params['shop_lon']);
     $shop_lat_param = floatval($params['shop_lat']);
-		var_dump('inside first if');
     if (!empty($shop_id_param) && !empty($shop_lon_param) && !empty($shop_lat_param)) {
       $shop_id = $shop_id_param;
       $shop_lon = $shop_lon_param;
       $shop_lat = $shop_lat_param;
-			var_dump('inside second if');
 
       // Create and save shipping line item
       if (!empty($shipping_service['name'])) {

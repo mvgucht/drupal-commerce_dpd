@@ -15,6 +15,27 @@ function commerce_dpd_commerce_dpd_settings_info() {
     'password' => array(
       'default' => '',
     ),
+		'Name1' => array(
+      'default' => '',
+    ),
+		'Name2' => array(
+      'default' => '',
+    ),
+		'Street' => array(
+      'default' => '',
+    ),
+		'HouseNo' => array(
+      'default' => '',
+    ),
+		'ZipCode' => array(
+      'default' => '',
+    ),
+		'City' => array(
+      'default' => '',
+    ),
+		'Country' => array(
+      'default' => '',
+    ),
     'debug_messages' => array(
       'default' => 0,
     ),
@@ -39,5 +60,8 @@ function commerce_dpd_commerce_dpd_settings_info() {
     'reference2' => array(
       'default' => '',
     ),
+		'time_logging_option' => array(
+      'default' => 'on',
+    )
   );
 }

@@ -49,6 +49,14 @@ function commerce_dpd_settings_form($form, &$form_state) {
     '#group' => 'groups',
     '#weight' => 3,
   );
+	
+	$form['commerce_dpd_time_logging'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('DPD Time Logging'),
+    '#collapsible' => TRUE,
+    '#group' => 'groups',
+    '#weight' => 4,
+  );
 
   $form['commerce_dpd_api']['stage_live_option'] = array(
     '#type' => 'select',
@@ -76,6 +84,49 @@ function commerce_dpd_settings_form($form, &$form_state) {
     '#description' => t('Contact DPD to obtain your API credentials.'),
     '#required' => TRUE,
     '#default_value' => isset($default_values['password']) ? $default_values['password'] : '',
+  );
+	
+	$form['commerce_dpd_api']['Name1'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Name1'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['Name1']) ? $default_values['Name1'] : '',
+  );
+	$form['commerce_dpd_api']['Street'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Street'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['Street']) ? $default_values['Street'] : '',
+  );
+	$form['commerce_dpd_api']['HouseNo'] = array(
+    '#type' => 'textfield',
+    '#title' => t('HouseNo'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['HouseNo']) ? $default_values['HouseNo'] : '',
+  );
+	$form['commerce_dpd_api']['ZipCode'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ZipCode'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['ZipCode']) ? $default_values['ZipCode'] : '',
+  );
+	$form['commerce_dpd_api']['City'] = array(
+    '#type' => 'textfield',
+    '#title' => t('City'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['City']) ? $default_values['City'] : '',
+  );
+	$form['commerce_dpd_api']['Country'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Country'),
+    '#description' => t('Contact DPD to obtain your API credentials.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['Country']) ? $default_values['Country'] : '',
   );
 
   $form['commerce_dpd_mapping']['salutation'] = array(
@@ -140,6 +191,18 @@ function commerce_dpd_settings_form($form, &$form_state) {
     '#description' => t('Choose your preferred Label format.'),
     '#required' => TRUE,
     '#default_value' => isset($default_values['label_size']) ? $default_values['label_size'] : '',
+  );
+	
+	$form['commerce_dpd_time_logging']['time_logging_option'] = array(
+    '#type' => 'select',
+    '#options' => array(
+      'on' => t('On'),
+      'off' => t('Off'),
+    ),
+    '#title' => t('Web service time logging'),
+    '#description' => t('This will monitor and time every dpd web service call and log it remotely. The logging call is timed out after max 1 second, but if you prefer you can always disable it here.'),
+    '#required' => TRUE,
+    '#default_value' => isset($default_values['time_logging_option']) ? $default_values['time_logging_option'] : '',
   );
 
   $form['debug'] = array(
