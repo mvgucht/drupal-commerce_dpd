@@ -14,10 +14,6 @@ function commerce_dpd_settings_form($form, &$form_state) {
 
   $default_values = commerce_dpd_settings(array());
 
-  if (commerce_dpd_check_api() === FALSE) {
-    drupal_set_message(t('DPD API not reachable!'), 'warning', FALSE);
-  }
-
   // Check if there is already the required tcpdf and fdpi library installed
   if (!commerce_dpd_get_library('tcpdf')) {
     drupal_set_message(t('You need to install TCPDF Library in order to use the Bulk Print Action to print multiple DPD Labels!'));
@@ -266,6 +262,10 @@ function commerce_dpd_settings_form_submit($form, &$form_state) {
 
   // Save new merged settings:
   variable_set('commerce_dpd_settings', $settings);
+	
+	if (commerce_dpd_check_api() === FALSE) {
+    drupal_set_message(t('DPD API not reachable!'), 'warning', FALSE);
+  }
 
   drupal_set_message(t('The configuration options have been saved.'));
 

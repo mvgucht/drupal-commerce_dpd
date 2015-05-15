@@ -456,7 +456,9 @@ function commerce_dpd_rest_api($language = 'en_EN') {
     $password = $dpd_api_settings['password'];
 		$server = $dpd_api_settings['stage_live_option'] == 'live';
 		$timeLogging = $dpd_api_settings['time_logging_option'] == 'on';
-    $dpd_soap_api['language'] = new DPD_Core_SOAP($delisID, $password, $language, $server, $timeLogging);
+
+		if (!($delisID =='' && $password == ''))
+			$dpd_soap_api['language'] = new DPD_Core_SOAP($delisID, $password, $language, $server, $timeLogging);
   }
 
   return $dpd_soap_api['language'];
@@ -982,11 +984,11 @@ function commerce_dpd_check_api() {
 
   $access = TRUE;
 
-  $dpd = commerce_dpd_rest_api();
-  $dpd_message = $dpd->getZipCodeRules();
-  if (isset($dpd_message->Message) && $dpd_message->Message == TRUE) {
-    $access = FALSE;
-  }
+  try{
+		$dpd = commerce_dpd_rest_api();
+	}catch (Exception $e) {
+		$access = FALSE;
+	}
 
   return $access;
 
