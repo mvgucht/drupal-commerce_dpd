@@ -1658,8 +1658,8 @@ function commerce_dpd_parcel_life_cycle_admin_page_access($order) {
  */
 function commerce_dpd_parcel_life_cycle_shipment_service_label($response) {
   $parcel_life_cycle_data = $response->ParcelLifeCycleData;
-  $shipment_info_field = $parcel_life_cycle_data->shipmentInfoField->serviceDescriptionField;
-  $shipment_service_label = $shipment_info_field->labelField->contentField;
+  $shipment_info_field = $parcel_life_cycle_data->shipmentInfo->serviceDescription;
+  $shipment_service_label = $shipment_info_field->label->content;
   return $shipment_service_label;
 }
 
@@ -1673,8 +1673,8 @@ function commerce_dpd_parcel_life_cycle_shipment_service_label($response) {
  */
 function commerce_dpd_parcel_life_cycle_shipment_service_value($response) {
   $parcel_life_cycle_data = $response->ParcelLifeCycleData;
-  $shipment_info_field = $parcel_life_cycle_data->shipmentInfoField->serviceDescriptionField;
-  $shipment_service_value = $shipment_info_field->contentField[0]->contentField;
+  $shipment_info_field = $parcel_life_cycle_data->shipmentInfo->serviceDescription;
+  $shipment_service_value = $shipment_info_field->content->content;
   return $shipment_service_value;
 }
 
@@ -1687,12 +1687,12 @@ function commerce_dpd_parcel_life_cycle_shipment_service_value($response) {
  *    Returns an array of states.
  */
 function commerce_dpd_parcel_life_cycle_shipment_states($response) {
-  $shipment_states = $response->ParcelLifeCycleData->statusInfoField;
+  $shipment_states = $response->ParcelLifeCycleData->statusInfo;
   $i = 0;
 
   foreach ($shipment_states as $shipment_state) {
     $states[] = array(
-      $shipment_state->labelField->contentField => $shipment_state->descriptionField->contentField[0]->contentField,
+      $shipment_state->label->content => $shipment_state->description->content->content,
     );
     $i++;
   }
