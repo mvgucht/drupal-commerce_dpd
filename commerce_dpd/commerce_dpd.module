@@ -474,9 +474,16 @@ function commerce_dpd_rest_api($language = 'en_EN') {
  *    Array of shops or FALSE
  */
 function commerce_dpd_rest_api_get_shops_by_address(array $search_address) {
-  $shopfinder_response = commerce_dpd_rest_api_shop_finder_by_address($search_address);
+  //try {
+		$geo = geocode($search_address);
+	
+		//$shopfinder_response = commerce_dpd_rest_api_shop_finder_by_address($search_address);
+		$shopfinder_response = commerce_dpd_rest_api_get_shops_by_geodata($geo['long'], $geo['lat'], 10);
+	//} catch (Exception $e) {
+	//	return FALSE;
+	//}
   if ($shopfinder_response) {
-    return $shopfinder_response->ParcelShopList;
+    return $shopfinder_response;
   }
   else {
     return FALSE;
@@ -500,6 +507,26 @@ function commerce_dpd_rest_api_shop_finder_by_address(array $search_address) {
   $return_value = commerce_dpd_rest_api_response($shopfinder_response, 'ParcelShopFinder');
 
   return $return_value;
+}
+
+function geocode($search_address){
+	$search_string = str_replace(' ', '+', $search_address['Street'] . '+' . $search_address['HouseNo'] . '+' .$search_address['Country'] . '+' .$search_address['ZipCode'] . '+' .$search_address['City']);
+	$details_url = "http://maps.googleapis.com/maps/api/geocode/json?address=" . $search_string . "&sensor=false";
+	
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, $details_url);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	$geoloc = json_decode(curl_exec($ch), true);
+
+	$lat = $geoloc['results'][0]['geometry']['location']['lat'];
+	$long = $geoloc['results'][0]['geometry']['location']['lng'];
+	
+	$result = array(
+		'lat' => $lat
+		,'long' => $long
+	);
+	
+	return $result;
 }
 
 /**
@@ -736,7 +763,7 @@ function commerce_dpd_rest_api_set_order_data_mapping($order) {
   $order_data['ParcelData']['Content'] = token_replace($dpd_settings['content'], array('commerce-order' => $order));
   $order_data['ParcelData']['YourInternalID'] = $order->order_number;
   $order_data['ParcelData']['Reference1'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));
-  $order_data['ParcelData']['Reference2'] = token_replace($dpd_settings['reference1'], array('commerce-order' => $order));;
+  $order_data['ParcelData']['Reference2'] = token_replace($dpd_settings['reference2'], array('commerce-order' => $order));;
 
   if (!empty($shop_id)) {
     $order_data['parcel_shop_id'] = $shop_id;
