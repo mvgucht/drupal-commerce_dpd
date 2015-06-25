@@ -1718,9 +1718,22 @@ function commerce_dpd_parcel_life_cycle_shipment_states($response) {
   $i = 0;
 
   foreach ($shipment_states as $shipment_state) {
+    $timestamp;
+    
+    if(isset($shipment_state->date->content)){
+      $timestamp = $shipment_state->date->content;
+    } else {
+      $timestamp = "";
+    }
+    
     $states[] = array(
-      $shipment_state->label->content => $shipment_state->description->content->content,
+      'data' => array(
+        "TimeStamp" => $timestamp,
+        $shipment_state->label->content => $shipment_state->description->content->content,
+      ),
+      "class" => array( $shipment_state->status ),
     );
+    
     $i++;
   }
 
