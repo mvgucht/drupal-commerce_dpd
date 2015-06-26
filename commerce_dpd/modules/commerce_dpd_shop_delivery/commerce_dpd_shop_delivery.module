@@ -299,20 +299,22 @@ function commerce_dpd_shop_delivery_custom_address_ajax_callback($form, $form_st
   $shipping_service = array('name' => 'dpd_shop_delivery');
   $order = $form_state['build_info']['args'][0];
   $values = $form_state['values'];
-
-  if (!empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['street']) &&
-    !empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['house_number']) &&
-    !empty($values['commerce_shipping']['service_details']['dpd_shop_custom_address']['postal_code'])
+  
+  $address = commerce_dpd_order_recipient_addressfield($order);
+    
+  if (!empty($values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['street']) &&
+    !empty($values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['house_number']) &&
+    !empty($values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['postal_code'])
   ) {
 
     $custom_address = array(
-      'Street' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['street'],
-      'HouseNo' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['house_number'],
-      'Country' => 'DE',
-      'City' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['city'],
-      'ZipCode' => $values['commerce_shipping']['service_details']['dpd_shop_custom_address']['postal_code'],
+      'Street' => $values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['street'],
+      'HouseNo' => $values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['house_number'],
+      'Country' => $address['Country'], //'DE',
+      'City' => $values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['city'],
+      'ZipCode' => $values['commerce_shipping']['service_details']['dpd_shop']['dpd_shop_custom_address']['postal_code'],
     );
-
+    
     $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, $custom_address);
 
   }
