@@ -210,19 +210,23 @@ function commerce_dpd_shop_delivery_process_map_select($order, $shipping_service
  * Provide a form-specific alteration.
  */
 function commerce_dpd_shop_delivery_form_commerce_checkout_form_shipping_alter(&$form, &$form_state, $form_id) {
-
-  $shipping_service = array('name' => 'dpd_shop_delivery');
-  $order = $form_state['build_info']['args'][0];
-  //$order_wrapper = entity_metadata_wrapper('commerce_order', $order);
-  $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, FALSE);
-
-
   // Local store machine name
-  $shipping_service = 'dpd_shop_delivery';
+  $shipping_service_module_name = basename(__FILE__, '.module');
+  
+  $services = commerce_shipping_services();
 
-  if (isset($form_state['values']['commerce_shipping']['shipping_service']) && $form_state['values']
-    ['commerce_shipping']['shipping_service'] == $shipping_service || $form['commerce_shipping']['shipping_service']['#default_value'] === 'dpd_shop_delivery'
+  if (isset($form_state['values']['commerce_shipping']['shipping_service']) &&  $services[$form_state['values']['commerce_shipping']
+    ['shipping_service']]['module'] == $shipping_service_module_name || $services[$form['commerce_shipping']['shipping_service']['#default_value']]['module'] == $shipping_service_module_name
   ) {
+    if (isset($form_state['values']['commerce_shipping']['shipping_service'])) {
+      $shipping_service = array('name' => $form_state['values']['commerce_shipping']['shipping_service']);
+    } else {
+      $shipping_service = array('name' => $form['commerce_shipping']['shipping_service']['#default_value']);
+    }
+    $order = $form_state['build_info']['args'][0];
+    //$order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+    $map_markup = commerce_dpd_shop_delivery_request_map($order, $shipping_service, FALSE);
+  
     $form['commerce_shipping']['service_details']['dpd_shop'] = array(
       '#type' => 'fieldset',
       '#title' => 'Map',
