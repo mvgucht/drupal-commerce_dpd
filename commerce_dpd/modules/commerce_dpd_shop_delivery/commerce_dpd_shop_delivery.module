@@ -125,9 +125,12 @@ function commerce_dpd_shop_delivery_map_select_access($order, $shipping_service)
   if (!isset($_GET['token']) || !drupal_valid_token($_GET['token'], 'commerce_dpd_shop_delivery/map-select/' . $order->order_id . '/' . $shipping_service['name'])) {
 		return FALSE;
   }
+  
+  $shipping_service_module_name = basename(__FILE__, '.module');
+  $services = commerce_shipping_services();
 
   // DENY if not a DPD shipping method
-  if ($shipping_service['shipping_method'] != 'dpd_shop_delivery') {
+  if ($services[$shipping_service['name']]['module'] != $shipping_service_module_name) {
     return FALSE;
   }
 
@@ -299,8 +302,12 @@ function commerce_dpd_shop_delivery_form_commerce_checkout_form_shipping_alter(&
  */
 function commerce_dpd_shop_delivery_custom_address_ajax_callback($form, $form_state) {
   $commands = array();
-
-  $shipping_service = array('name' => 'dpd_shop_delivery');
+  
+  if (isset($form_state['values']['commerce_shipping']['shipping_service'])) {
+    $shipping_service = array('name' => $form_state['values']['commerce_shipping']['shipping_service']);
+  } else {
+    $shipping_service = array('name' => $form['commerce_shipping']['shipping_service']['#default_value']);
+  }
   $order = $form_state['build_info']['args'][0];
   $values = $form_state['values'];
   
