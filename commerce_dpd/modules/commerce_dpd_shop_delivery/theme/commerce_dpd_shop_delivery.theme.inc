@@ -111,7 +111,7 @@ function template_preprocess_commerce_dpd_shop_delivery_shop_details(&$vars) {
 
   //Custom Variable for Shop Distance
   if (!empty($vars['shop_details']->GeoData->Distance)) {
-    $vars['shop_distance'] = $vars['shop_details']->GeoData->Distance . t('km');
+    $vars['shop_distance'] = round($vars['shop_details']->GeoData->Distance, 2) . t('km');
   }
   else {
     $vars['shop_distance'] = '';
