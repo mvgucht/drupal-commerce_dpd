@@ -34,15 +34,20 @@ x leaflet_more_maps
 x pdf
 
 To use this Module you will also need the following PHP Library installed:
-https://github.com/DPDBeNeLux/php-DPD_Cloud_Class
+https://github.com/mvgucht/php-DPD_Core_Class
 
-It should be included in your sites/all/libraries/dpd-cloud-rest
+It should be included in your sites/all/libraries/dpd-core-soap
 
 When you look inside the folder you should have the following structure:
-sites/all/libraries/dpd-cloud-rest
- DPD.api.class.inc
- examples.php
+sites/all/libraries/dpd-core-soap
+ DPD_Core_SOAP.api.class.inc
  README.md
+sites/all/libraries/dpd-core-soap/classes
+ dpdlogin.php
+ dpdparcellifecycle.php
+ dpdparcelshopfinder.php
+ dpdshipment.php
+ dpdshippingmethods.php 
 
 You also can use the attached MAKE file for that purpose. If you are not familiar
 with MAKE files you can also install it manually.

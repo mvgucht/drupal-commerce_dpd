@@ -171,22 +171,22 @@ function commerce_dpd_requirements($phase) {
   $requirements = array();
   if ($phase == 'runtime') {
     $t = get_t();
-    $library = libraries_load('dpd-cloud-rest');
-    if (!$library['installed'] || !class_exists('DPD_Cloud_REST')) {
-      $requirements['dpd-cloud-rest'] = array(
-        'title' => $t('DPD Cloud REST API php class'),
+    $library = libraries_load('dpd-core-soap');
+    if (!$library['installed'] || !class_exists('DPD_Core_SOAP')) {
+      $requirements['dpd-core-soap'] = array(
+        'title' => $t('DPD Cloud SOAP API php class'),
         'value' => $t('Latest version available'),
         'severity' => REQUIREMENT_ERROR,
         'description' => $t('You need to download the !dpd_cloud_rest and extract the entire contents of the archive into the %path directory within %library_folder subfolder on your server.', array(
             '!dpd_cloud_rest' => l($t('DPD Cloud REST API php class'), $library['download url']),
             '%path' => 'sites/all/libraries',
-            '%library_folder' => 'dpd-cloud-rest'
+            '%library_folder' => 'dpd-core-soap'
           )),
       );
     }
     else {
-      $requirements['dpd-cloud-rest'] = array(
-        'title' => $t('DPD Cloud REST API php class'),
+      $requirements['dpd-core-soap'] = array(
+        'title' => $t('DPD Cloud SOAP API php class'),
         'severity' => REQUIREMENT_OK,
         'value' => $t('Enabled'),
       );
