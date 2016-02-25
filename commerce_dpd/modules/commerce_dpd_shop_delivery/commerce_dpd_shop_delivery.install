@@ -89,10 +89,9 @@ function commerce_dpd_shop_delivery_schema() {
       ),
       'shop_id' => array(
         'description' => 'The DPD Shop identifier.',
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
+        'type' => 'varchar',
+		'length' => 10,
+        'not null' => TRUE
       ),
       'shop_lon' => array(
         'type' => 'numeric',

@@ -171,7 +171,7 @@ function commerce_dpd_shop_delivery_process_map_select($order, $shipping_service
   $shop_lat = NULL;
   $shop_lon = NULL;
   if (!empty($params['shop_id']) && !empty($params['shop_lon']) && !empty($params['shop_lat'])) {
-    $shop_id_param = intval($params['shop_id']);
+    $shop_id_param = $params['shop_id'];
     $shop_lon_param = floatval($params['shop_lon']);
     $shop_lat_param = floatval($params['shop_lat']);
     if (!empty($shop_id_param) && !empty($shop_lon_param) && !empty($shop_lat_param)) {
