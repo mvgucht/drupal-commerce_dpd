@@ -229,7 +229,6 @@ function commerce_dpd_shop_delivery_service_details_form($pane_form, $pane_value
   }
   else {
     $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
-    //dpm($order_wrapper->getPropertyInfo(),'test');
     $dpd_shop = $order_wrapper->dpd_shop->value();
     if ($dpd_shop) {
       $shop_lon = $dpd_shop->shop_lon;

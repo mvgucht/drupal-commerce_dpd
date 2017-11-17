@@ -133,8 +133,6 @@ function template_preprocess_commerce_dpd_shop_delivery_shop_details(&$vars) {
   }
 
   if (!empty($rows)) {
-
-    //dpm($rows);
     $attributes = array(
       'class' => array('commerce-dpd-shop-delivery-shop-timetable'),
     );

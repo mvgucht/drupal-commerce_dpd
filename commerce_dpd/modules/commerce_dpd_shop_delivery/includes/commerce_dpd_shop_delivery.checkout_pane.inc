@@ -11,7 +11,6 @@
 function commerce_dpd_shop_delivery_order_shop_pane_checkout_form($form, &$form_state, $checkout_pane, $order) {
   $pane_form = array();
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
-  //dpm($order_wrapper->getPropertyInfo(),'test'); 
   $dpd_shop = $order_wrapper->dpd_shop->value();
   if ($dpd_shop) {
     $dpd_shop_lon = $dpd_shop->shop_lon;
