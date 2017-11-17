@@ -274,7 +274,6 @@ function commerce_dpd_classic_predict_service_form($form, &$form_state, $shippin
  */
 function commerce_dpd_classic_predict_service_form_validate($form, &$form_state) {
   // Ensure the rate amount is numeric.
-//dpm($form_state['values']);
   if (!is_numeric($form_state['values']['dpd_classic_predict']['amount'])) {
     form_set_error('dpd_classic_predict][amount', t('You must enter a numeric value for the base rate amount.'));
   }
