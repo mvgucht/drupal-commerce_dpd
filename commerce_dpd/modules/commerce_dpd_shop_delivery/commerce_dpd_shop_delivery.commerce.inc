@@ -174,7 +174,15 @@ function commerce_dpd_shop_delivery_service_details_form($pane_form, $pane_value
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
 
   $details_form = array();
-  $details_values = !empty($pane_values['service_details']) ? $pane_values['service_details'] : array();
+  $details_values = array();
+  // Shop Delivery values are stored directly into the database. Get values of a previously selected shop
+  $line_items = $order_wrapper->commerce_line_items->value();    
+  foreach($line_items AS $line_item){
+	if ($line_item->type == "shipping" && !empty($line_item->data['service_details'])){
+		$details_values = $line_item->data['service_details'];
+	}
+  }
+  
   $dpd_shop_options = array();
 
   // Build the shops map markup.
